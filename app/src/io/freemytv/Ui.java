@@ -31,6 +31,7 @@ final class Ui {
     private static final RectF OVAL = new RectF();
 
     static synchronized void init(Context c) {
+        Performance.init(c);
         if (loaded) return;
         loaded = true;
         AssetManager a = c.getAssets();

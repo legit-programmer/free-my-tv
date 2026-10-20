@@ -30,18 +30,26 @@ import org.json.JSONObject;
  */
 public class SettingsActivity extends Activity {
     private SettingsView view;
+    private int performanceRevision;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Watchdog.install(this);
         Ui.init(this);
+        performanceRevision = Performance.revision;
         view = new SettingsView(this);
         setContentView(view);
     }
 
     @Override protected void onResume() {
         super.onResume();
+        if (performanceRevision != Performance.revision) {
+            view.pause();
+            view = new SettingsView(this);
+            setContentView(view);
+            performanceRevision = Performance.revision;
+        }
         view.resume();
         // From ADB: am start -n io.freemytv/.SettingsActivity --ez screensaver true (straight to the preview).
         if (preview == null && getIntent().getBooleanExtra("screensaver", false)) {
@@ -107,8 +115,7 @@ public class SettingsActivity extends Activity {
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Spring[] pop = new Spring[5];
         private final RectF tmp = new RectF(), rowRect = new RectF();
-        private JSONObject state = new JSONObject(), recs = new JSONObject();
-        private boolean hasKey;
+        private JSONObject state = new JSONObject();
         private int screen = MAIN, focus;
         private boolean running, okDown, backDown;
         private long startedAt, lastNanos, pendingAt, lastSky;
@@ -121,8 +128,6 @@ public class SettingsActivity extends Activity {
             @Override public void run() {
                 if (!running) return;
                 state = HomeMode.state(getContext());
-                hasKey = Recs.hasKey(getContext());
-                recs = Recs.status(getContext());
                 if (!state.optString("busy").isEmpty()) pendingAt = 0;
                 invalidate();
                 handler.postDelayed(this, 500);
@@ -160,7 +165,7 @@ public class SettingsActivity extends Activity {
             boolean moving = busy();
             for (Spring s : pop) moving |= !s.settled();
             if (moving || SystemClock.uptimeMillis() - lastSky >= 100) invalidate();
-            Choreographer.getInstance().postFrameCallback(this);
+            Choreographer.getInstance().postFrameCallbackDelayed(this, Performance.lightweight ? 100 : 0);
         }
 
         @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
@@ -204,7 +209,7 @@ public class SettingsActivity extends Activity {
         }
 
         private int rowCount() {
-            return screen == MAIN ? 3 : 2;
+            return screen == MAIN ? 4 : 2;
         }
 
         @Override protected void onDraw(Canvas c) {
@@ -238,9 +243,9 @@ public class SettingsActivity extends Activity {
             boolean working = busy();
             String busyText = state.optString("busy");
             String mode = freeActive() ? "Free My TV" : Ui.tr("Original", "Original");
-            String[] labels = {Ui.tr("Início", "Home Screen"), Ui.tr("Tela de Descanso", "Screensaver"), Ui.tr("Ajustes da TV", "TV Settings")};
-            String[] values = {working ? "" : mode, Ui.tr("Ver agora", "Preview"), ""};
-            for (int i = 0; i < 3; i++) {
+            String[] labels = {Ui.tr("Início", "Home Screen"), Ui.tr("Tela de Descanso", "Screensaver"), Ui.tr("Desempenho e apps", "Performance & Apps"), Ui.tr("Ajustes da TV", "TV Settings")};
+            String[] values = {working ? "" : mode, Ui.tr("Ver agora", "Preview"), "", ""};
+            for (int i = 0; i < 4; i++) {
                 float y = (LIST_TOP + i * (ROW_H + ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + ROW_H * k);
                 float f = drawRowBackground(c, i);
@@ -267,7 +272,7 @@ public class SettingsActivity extends Activity {
                 }
             }
 
-            float y = (LIST_TOP + 3 * (ROW_H + ROW_GAP) + 46) * k;
+            float y = (LIST_TOP + 4 * (ROW_H + ROW_GAP) + 46) * k;
             String error = state.optString("error");
             if (working && (busyText.contains("Permitir") || busyText.contains("Allow"))) {
                 c.drawText(Ui.tr("Na TV: marque “Sempre permitir” e aperte OK.", "On the TV: tick “Always allow” and press OK."),
@@ -278,28 +283,8 @@ public class SettingsActivity extends Activity {
                 y += 46 * k;
             }
             y = drawComparison(c, y);
-            y = drawRecs(c, y + 26 * k);
+            // Keep room for notices; recommendation controls and credit are in Performance & Apps.
             drawNotices(c, y + 40 * k);
-        }
-
-        /** Home screen picks: status, and the credit TMDB asks for. */
-        private float drawRecs(Canvas c, float y) {
-            float x = LIST_X * k + 30 * k;
-            c.drawText(Ui.tr("RECOMENDAÇÕES", "RECOMMENDATIONS"), x, y, header);
-            String line;
-            String error = recs.optString("error");
-            int count = recs.optInt("count");
-            if (!hasKey) line = Ui.tr("Sem chave do TMDB: veja o README (config.properties).", "No TMDB key: see the README (config.properties).");
-            else if (!error.isEmpty()) line = Ui.tr("Erro: ", "Error: ") + error + ".";
-            else if (count > 0) line = Ui.tr("Ligadas · " + count + " títulos nos apps da TV, 3 novos a cada hora.",
-                    "On · " + count + " titles from the TV's apps, 3 new ones every hour.");
-            else line = Ui.tr("Buscando os títulos…", "Fetching titles…");
-            c.drawText(TextUtils.ellipsize(line, notice, 790 * k, TextUtils.TruncateAt.END).toString(), x, y + 42 * k, notice);
-            version.setTextAlign(Paint.Align.LEFT);
-            c.drawText(Ui.tr("Usa a API do TMDB, sem endosso ou certificação do TMDB.",
-                    "This product uses the TMDB API but is not endorsed or certified by TMDB."), x, y + 78 * k, version);
-            version.setTextAlign(Paint.Align.CENTER);
-            return y + 78 * k;
         }
 
         /** List row: no background; focused, white with a shadow (the Apple TV focus). Returns how focused it is. */
@@ -332,7 +317,8 @@ public class SettingsActivity extends Activity {
             JSONObject a = metrics == null ? null : metrics.optJSONObject(HomeMode.ORIGINAL);
             JSONObject b = metrics == null ? null : metrics.optJSONObject(HomeMode.FREE);
             String[][] rows = {{Ui.tr("Botão Início", "Home button"), "homeMs"}, {Ui.tr("Memória livre", "Free memory"), "memAvailableMB"},
-                    {Ui.tr("Memória do Início", "Home screen memory"), "homePssMB"}};
+                    {Ui.tr("Memória do Início", "Home screen memory"), "homePssMB"},
+                    {Ui.tr("App (todos os processos)", "App (all processes)"), "appPssMB"}};
             for (int i = 0; i < rows.length; i++) {
                 float base = y + (46 + 40 * i) * k;
                 c.drawText(rows[i][0], x, base, cellLabel);
@@ -361,7 +347,7 @@ public class SettingsActivity extends Activity {
         private void drawChoice(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Início", "Home Screen"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
-            String[][] options = {{"Free My TV", Ui.tr("Sem anúncios, com a tela de descanso nova", "No ads, with the new screensaver")},
+            String[][] options = {{"Free My TV", Ui.tr("Início e descanso; apps opcionais separados", "Launcher + screensaver; apps separate")},
                     {"Original", Ui.tr("O Início de fábrica da TV", "The TV's factory home screen")}};
             int current = freeActive() ? 0 : 1;
             for (int i = 0; i < 2; i++) {
@@ -473,6 +459,8 @@ public class SettingsActivity extends Activity {
             } else if (focus == 1) {
                 pause();
                 activity.showPreview();
+            } else if (focus == 2) {
+                activity.startActivity(new Intent(activity, TuningActivity.class));
             } else {
                 activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             }

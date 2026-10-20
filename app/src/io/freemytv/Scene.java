@@ -39,12 +39,14 @@ final class Scene {
 
     Scene() {
         try {
-            aurora = new RuntimeShader(Shaders.AURORA);
-            glass = new RuntimeShader(Shaders.GLASS);
-            liquid = new RuntimeShader(Shaders.LIQUID);
-            auroraPaint.setShader(aurora);
-            glassPaint.setShader(glass);
-            liquidPaint.setShader(liquid);
+            if (!Performance.lightweight) {
+                aurora = new RuntimeShader(Shaders.AURORA);
+                glass = new RuntimeShader(Shaders.GLASS);
+                liquid = new RuntimeShader(Shaders.LIQUID);
+                auroraPaint.setShader(aurora);
+                glassPaint.setShader(glass);
+                liquidPaint.setShader(liquid);
+            }
         } catch (RuntimeException | LinkageError e) {   // Android 12: no AGSL, flat look instead
             AppLog.w("shader unavailable, using gradient: " + e.getMessage());
             aurora = null;
@@ -119,10 +121,10 @@ final class Scene {
 
     /** Photo transition: both photos in the glass, blended by setGlassMix (0 = the first one). */
     void setGlassImages(int[] from, int[] to) {
+        if (liquid == null) return;
         imageGlass = true;
         glassA = fill(glassA, from);
         if (to != null) glassB = fill(glassB, to);
-        if (liquid == null) return;
         glassShaderA = linear(glassA);
         liquid.setInputShader("imageA", glassShaderA);
         liquid.setInputShader("imageB", to != null ? linear(glassB) : glassShaderA);

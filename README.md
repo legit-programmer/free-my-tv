@@ -15,6 +15,26 @@ Open source. Built with Claude Code. One button to undo.
 
 </div>
 
+## This fork: performance and explicit debloating
+
+This branch adds OS-independent improvements for low-memory TVs. **It does not yet add support for an older Android version.** The minimum SDK remains 31, target SDK 33. Do not install on the Mi TV until its OS is confirmed and compatibility work is completed.
+
+Open **Settings → Performance & Apps**:
+
+- Lightweight mode is on by default: gradient backgrounds instead of animated shaders, immediate focus transitions, smaller recommendation images and a clock-only screensaver refreshed about once per second.
+- Recommendations and crypto are off by default; weather is on. Each has a separate toggle. Disabled features start no new requests; requests already in flight may finish. Visual preferences apply when returning Home.
+- When recommendations are enabled in lightweight mode, download w780 images, use 960×540 staging instead of 1920×1080, halve card dimensions, retain at most three prepared images and preload only the current tab. Full mode retains the original visual treatment.
+- **Scan installed apps** is read-only. Only installed, allowlisted optional candidates appear. Nothing is preselected on a new install; apps disabled by this fork are checked on later scans. Pre-disabled apps are locked and untouched.
+- **Apply selection** asks for confirmation, disables selected candidates and restores unchecked candidates previously disabled here. **Restore optional apps** leaves the launcher alone.
+- Activating the launcher changes only the launcher/screensaver and required replacement packages. Optional debloating and Assistant are separate. The legacy `disable_assistant` build setting is ignored.
+- Original mode restores tracked changes and the recorded screensaver setting. Boot verification only re-disables packages this app owns. The watchdog still restores the launcher after repeated crashes.
+
+There are **no guessed Xiaomi package entries**. Use `bash tools/inspect-tv.sh [adb-serial]` after connecting ADB to collect the read-only inventory. See [PORTING.md](PORTING.md) for deferred work and device checks.
+
+Local validation: `JAVA_HOME=/path/to/jdk ANDROID_HOME=/path/to/sdk ./build.sh` and `bash tools/test.sh`. CI performs the same build and policy tests. No performance benchmark or on-TV UI validation has been completed for this fork.
+
+The feature descriptions below describe upstream full mode. Its TCL benchmark is not a benchmark of this fork or a promise for a Mi TV.
+
 ## What you get
 
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
@@ -35,7 +55,7 @@ About ten minutes. You need a Google TV or Android TV (Android 12 or newer) and 
 1. **On the TV**, turn on developer mode: Settings → System → About → press *Android TV OS build* 7 times. Then Settings → System → Developer options → turn on **USB debugging**. Write down the TV's IP address (Settings → Network & Internet).
 2. **On your computer**, get the code:
    ```bash
-   git clone https://github.com/simbasjungles/free-my-tv && cd free-my-tv
+   git clone https://github.com/legit-programmer/free-my-tv && cd free-my-tv
    ```
 3. **Open [Claude Code](https://claude.com/claude-code) in that folder** and say:
    > Install Free My TV on my TV at 192.168.1.50. I live in Lisbon.
@@ -81,7 +101,7 @@ Everything lives in `config.properties`, created by the first build:
 | `language` | `auto` (follows the TV), `en` or `pt` | `auto` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
-| `disable_assistant` | Also turn off Google Assistant | `false` |
+| `disable_assistant` | Legacy; ignored. Select Assistant in Performance & Apps. | `false` |
 
 Changed something? Run `./build.sh` and install again. Keep `freemytv.keystore`: updates are signed with it.
 
@@ -97,13 +117,9 @@ To remove it for good, switch to *Original* first, then uninstall *Free My TV* (
 
 ## What it changes
 
-- It becomes the home screen and the screensaver.
-- It turns off, without uninstalling:
-  - the stock home screen and screensaver, with the remote shortcuts they run on some TVs (like the Netflix button on TCL);
-  - Google TV's recovery home, Play Games and YouTube Music;
-  - on TCL TVs, the TCL Channel, messages, store demo, hotel menu, manuals, mirroring and logging apps;
-  - Google Assistant, only with `disable_assistant=true`.
-- Picture, sound, inputs, remote pairing, Google services and the Play Store are on a protected list, checked before every change.
+- Launcher activation replaces the home screen and screensaver and disables the replaced packages (and Google's recovery home where present).
+- Optional apps are changed only through **Performance & Apps → Apply selection**. The current candidates include Play Games, YouTube Music, Assistant and upstream TCL extras. Scan shows only installed candidates.
+- Picture, sound, inputs, remote pairing, Google services and the Play Store remain protected. Device-specific Xiaomi protections and candidates await actual inventory.
 
 ## Any TV
 

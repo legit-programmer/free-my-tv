@@ -67,6 +67,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".TuningActivity" android:process=":home" android:exported="false"
+            android:screenOrientation="landscape" android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <!-- The home screen. Its own process (:home): if it ever crashes, the safety net in the main process still
              works. It only becomes the TV's home screen in Free My TV mode (cmd package set-home-activity). -->
         <activity

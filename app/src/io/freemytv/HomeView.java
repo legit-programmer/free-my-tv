@@ -581,7 +581,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || sheetOpen || sheet.value > 0.001f
                 || drawerOpen || drawer.value > 0.001f;
-        Choreographer.getInstance().postFrameCallback(this);
+        Choreographer.getInstance().postFrameCallbackDelayed(this, Performance.lightweight ? 16 : 0);
     }
 
     private static boolean step(Spring[] springs, float dt) {
@@ -1026,6 +1026,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Coin logo + price in the configured currency, in a row at the right end of the tab bar. */
     private void drawQuotes(Canvas c) {
+        if (!Performance.prices) return;
         float right = platterRect.isEmpty() ? CONTENT_R * k : platterRect.right - SHELF_PAD * k;
         applyTone();
         Paint text = lQuote;
@@ -1286,8 +1287,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
         for (int i = 0; i < drawerItems.size(); i++) if (i != top) drawDrawerTile(c, i);
         if (top >= 0) drawDrawerTile(c, top);
-        drawWeatherCard(c, weatherCard);
-        drawQuotesCard(c, quotesCard);
+        if (Performance.weather) drawWeatherCard(c, weatherCard);
+        if (Performance.prices) drawQuotesCard(c, quotesCard);
     }
 
     /** Square drawer button: symbol and name; an input with no device is dimmed. Focused: white, with dark text. */
@@ -1877,7 +1878,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 retarget(false);
             }
         }
-        for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
+        for (Recs.Pick p : (Performance.lightweight ? cards : recs.wanted())) recs.backdrop(p);
         Backdrop b = cards.isEmpty() ? null : recs.backdrop(cards.get(0));
         if (cards.isEmpty() || b != null) showBackdrop(b);
         heroDirty = true;
@@ -1969,6 +1970,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * card, genre · runtime · service).
      */
     private void drawLightCard(Canvas c, int i) {
+        if (!Performance.recommendations) {
+            if (i == 0) c.drawText(Ui.tr("Recomendações desativadas", "Recommendations are off"),
+                    MARGIN * k, (L_CARDS_TOP + 100) * k, lCardTitle);
+            return;
+        }
         RectF base = cardRects[i];
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
         float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
