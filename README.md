@@ -21,6 +21,8 @@ This branch adds OS-independent improvements for low-memory TVs. **It does not y
 
 Open **Settings → Performance & Apps**:
 
+- With recommendations off (the default), Home uses a cinematic asymmetric layout: a large clock, selected-app spotlight, charcoal/teal background, warm gold focus border and bottom app strip. Up opens Live TV / HDMI / Settings; Down opens the existing drawer. Enabling recommendations restores the original card layout.
+- The cinematic background uses static gradients and a reusable 64×64 grain tile (16 KiB), with existing local app logos. No wallpaper downloads or continuous background animation. Idle frame checks run at most four times per second, and remote input wakes rendering immediately. Lightweight mode avoids explicit hardware layer textures; TV measurements are still pending.
 - Lightweight mode is on by default: gradient backgrounds instead of animated shaders, immediate focus transitions, smaller recommendation images and a clock-only screensaver refreshed about once per second.
 - Recommendations and crypto are off by default; weather is on. Each has a separate toggle. Disabled features start no new requests; requests already in flight may finish. Visual preferences apply when returning Home.
 - When recommendations are enabled in lightweight mode, download w780 images, use 960×540 staging instead of 1920×1080, halve card dimensions, retain at most three prepared images and preload only the current tab. Full mode retains the original visual treatment.
@@ -182,3 +184,4 @@ No accounts, no analytics, no tracking. The app only talks to TMDB, Open-Meteo (
 ## License
 
 [MIT](LICENSE). Fork it, change it, ship it.
+

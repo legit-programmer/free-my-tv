@@ -49,3 +49,8 @@ The user asked us not to assume or implement an OS version until they reconfirm 
 - Recommendation and weather caches remain on disk when toggled off; no new requests are started. Requests already in flight may complete. Turning recommendations off hides cards and releases the prepared-image cache.
 - Weather being off hides its cards and stops refreshes; previously cached sunset data may still determine the day/night palette.
 - The on-screen package list is intentionally restricted to reviewed candidates. An empty list is not an error and never justifies disabling arbitrary system apps.
+
+
+## Cinematic Home validation
+
+The default recommendations-off view now uses a static cinematic layout. SDK levels are unchanged. On-device checks still required: 720p/1080p/4K legibility, long app names and 12-hour clocks, cold-start logos, shelf → shortcuts → shelf navigation, drawer and All Apps return, Home reset, recommendation toggle, pause/resume and idle CPU/PSS. The 250 ms idle callback checks state without invalidating unchanged layers; it is not a zero-wakeup event loop.
