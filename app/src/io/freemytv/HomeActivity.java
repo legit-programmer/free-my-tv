@@ -16,6 +16,7 @@ import android.widget.TextView;
  */
 public class HomeActivity extends Activity {
     private HomeView home;
+    private int performanceRevision;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -34,6 +35,7 @@ public class HomeActivity extends Activity {
             return;
         }
         Ui.init(this);
+        performanceRevision = Performance.revision;
         home = new HomeView(this);
         setContentView(home);
         getWindow().setBackgroundDrawable(null);
@@ -41,6 +43,12 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (home != null && performanceRevision != Performance.revision) {
+            home.destroy();
+            home = new HomeView(this);
+            setContentView(home);
+            performanceRevision = Performance.revision;
+        }
         if (home != null) home.resume();
     }
 

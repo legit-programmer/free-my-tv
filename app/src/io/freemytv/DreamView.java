@@ -149,8 +149,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         scene.applyPalette();
         content.setUseCompositingLayer(true, null);
         try {
-            glassShader = new RuntimeShader(Shaders.GLASS_TEXT);
-            glassPaint.setShader(glassShader);
+            if (!Performance.lightweight) {
+                glassShader = new RuntimeShader(Shaders.GLASS_TEXT);
+                glassPaint.setShader(glassShader);
+            }
         } catch (RuntimeException | LinkageError e) {   // Android 12: no AGSL
             AppLog.w("glass clock unavailable: " + e.getMessage());
             glassShader = null;
@@ -400,7 +402,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             lastFrame = frameTimeNanos;
             invalidate();
         }
-        Choreographer.getInstance().postFrameCallback(this);
+        Choreographer.getInstance().postFrameCallbackDelayed(this, Performance.lightweight ? 1000 : 0);
     }
 
     /** The clock that drives the animations. */
@@ -504,7 +506,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             float right = RIGHT * k;
             float x = right;
             HomeData.Weather wx = data.weather;
-            if (!Double.isNaN(wx.temp)) {
+            if (Performance.weather && !Double.isNaN(wx.temp)) {
                 String temp = HomeData.degrees(wx.temp);
                 float tw = cornerDate.measureText(temp);
                 c.drawText(temp, x - tw, DATE_BASE * k, cornerDate);
@@ -547,7 +549,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 qx += cornerQuote.measureText(values[i]) + spacing;
             }
             String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
-            if (!stale.isEmpty()) c.drawText(stale, right - total - 24 * k - cornerStale.measureText(stale), base, cornerStale);
+            if (Performance.prices && !stale.isEmpty()) c.drawText(stale, right - total - 24 * k - cornerStale.measureText(stale), base, cornerStale);
         } finally {
             chrome.endRecording();
         }
@@ -751,7 +753,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
         // Weather: symbol, temperature, high and low, centered under the clock.
         HomeData.Weather wx = data.weather;
-        if (!Double.isNaN(wx.temp)) {
+        if (Performance.weather && !Double.isNaN(wx.temp)) {
             float base = clockBase + 76 * k;
             String symbol = Symbols.weather(wx.code, wx.isDay);
             String now = HomeData.degrees(wx.temp);
@@ -784,6 +786,6 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             x += quotePaint.measureText(values[i]) + spacing;
         }
         String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
-        if (!stale.isEmpty()) c.drawText(Ui.tr("cotações de ", "prices from ") + stale, cx, base + 38 * k, stalePaint);
+        if (Performance.prices && !stale.isEmpty()) c.drawText(Ui.tr("cotações de ", "prices from ") + stale, cx, base + 38 * k, stalePaint);
     }
 }

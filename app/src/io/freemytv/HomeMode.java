@@ -58,7 +58,7 @@ final class HomeMode {
         "com.tcl.repairguide", "com.tcl.ocean.instructions", "com.tcl.logkit",        // repair guide, manual, logs
     };
 
-    /** The voice assistant, only with disable_assistant=true in config.properties (the mic button stops working). */
+    /** Optional voice assistant packages; selecting these stops voice search. */
     static final String[] ASSISTANT = {"com.google.android.katniss", "com.android.hotwordenrollment.okgoogle"};
 
     /** Never turned off, not even by mistake (picture, sound, inputs, remote, store). Checked before every disable. */
@@ -98,6 +98,84 @@ final class HomeMode {
         ModeJob.schedule(c, ModeJob.VERIFY, null, 0);
     }
 
+    /** Read-only inventory. No package is disabled by opening the screen. */
+    static JSONObject debloatInventory(Context c) throws IOException, JSONException {
+        try (Adb adb = Adb.connect(c, 120_000, null)) {
+            Set<String> present = packages(adb, "");
+            Set<String> disabled = packages(adb, "-d");
+            Set<String> owned = new HashSet<>(stringList(state(c), "optionalDisabled"));
+            JSONArray rows = new JSONArray();
+            for (String pkg : optionalCandidates()) {
+                if (!present.contains(pkg) || PROTECTED.contains(pkg)) continue;
+                rows.put(new JSONObject().put("package", pkg).put("selected", owned.contains(pkg))
+                        .put("external", disabled.contains(pkg) && !owned.contains(pkg)));
+            }
+            return new JSONObject().put("rows", rows);
+        }
+    }
+
+    private static Set<String> optionalCandidates() {
+        Set<String> out = new HashSet<>(Arrays.asList(DEBLOAT));
+        // Assistant is selectable with an explicit warning, never disabled by launcher activation.
+        out.addAll(Arrays.asList(ASSISTANT));
+        return new java.util.TreeSet<>(out);
+    }
+
+    /** Apply only allowlisted selections. Track ownership so pre-disabled apps stay untouched. */
+    static void applyDebloat(Context c, String selection) {
+        synchronized (RUN) {
+            try (Adb adb = connect(c, state(c))) {
+                Set<String> selected = new HashSet<>();
+                JSONArray input = new JSONArray(selection);
+                Set<String> allowed = optionalCandidates();
+                for (int i = 0; i < input.length(); i++) {
+                    String pkg = input.getString(i);
+                    if (!allowed.contains(pkg) || PROTECTED.contains(pkg))
+                        throw new IOException("Unapproved package: " + pkg);
+                    selected.add(pkg);
+                }
+                JSONObject s = state(c);
+                Set<String> owned = new HashSet<>(stringList(s, "optionalDisabled"));
+                Set<String> all = new HashSet<>(stringList(s, "disabled"));
+                Set<String> present = packages(adb, "");
+                Set<String> disabled = packages(adb, "-d");
+                Set<String> changes = new HashSet<>(owned);
+                changes.addAll(selected);
+                List<String> failures = new ArrayList<>();
+                for (String pkg : sorted(changes)) {
+                    DebloatPolicy.Action action = DebloatPolicy.action(allowed.contains(pkg), PROTECTED.contains(pkg),
+                            present.contains(pkg), selected.contains(pkg), disabled.contains(pkg), owned.contains(pkg));
+                    switch (action) {
+                        case DISABLE:
+                            if (adb.shell("pm disable-user --user 0 " + pkg).contains("disabled-user")) {
+                                owned.add(pkg); all.add(pkg);
+                            } else failures.add(pkg);
+                            break;
+                        case ENABLE:
+                            if (adb.shell("pm enable " + pkg).contains("new state: enabled")) {
+                                owned.remove(pkg); all.remove(pkg);
+                            } else failures.add(pkg);
+                            break;
+                        case FORGET: owned.remove(pkg); all.remove(pkg); break;
+                        default: break;
+                    }
+                    // Persist each successful change, including partial runs.
+                    s = state(c);
+                    s.put("optionalDisabled", new JSONArray(sorted(owned))).put("disabled", new JSONArray(sorted(all)));
+                    save(c, s);
+                }
+                done(c, failures.isEmpty() ? null : Ui.tr("Falha ao alterar: ", "Could not change: ") + String.join(", ", failures));
+                notice(c, Ui.tr("Apps opcionais desativados: ", "Optional apps disabled: ") + owned.size());
+            } catch (Exception e) {
+                done(c, e.getMessage());
+            } finally {
+                JSONObject s = state(c);
+                try { s.put("debloatFinished", System.currentTimeMillis()); } catch (JSONException ignored) {}
+                save(c, s);
+            }
+        }
+    }
+
     // MARK: - Switches (main process, from ModeJob)
 
     static void applyNow(Context c, String mode) {
@@ -116,10 +194,13 @@ final class HomeMode {
                 String found = currentHome(adb);
                 home = found != null ? realHome(found) : "";
             }
+            if (home.isEmpty()) throw new IOException("Cannot identify the original launcher; nothing changed");
             String dream = s.optString("originalDream", "");
             if (dream.isEmpty()) dream = defaultDream(adb);
             JSONObject latest = state(c);
             latest.put("originalHome", home).put("originalDream", dream);
+            if (!FREE.equals(s.optString("mode")))
+                latest.put("originalDreamSetting", adb.shell("settings get secure screensaver_components").trim());
             save(c, latest);
             if (metrics(latest, ORIGINAL) == null && !home.isEmpty()) {
                 busy(c, Ui.tr("Medindo o Início original…", "Measuring the original home screen…"));
@@ -133,13 +214,19 @@ final class HomeMode {
             List<String> targets = targets(home, dream);
             Set<String> disabled = new HashSet<>(stringList(state(c), "disabled"));
             Set<String> present = packages(adb, "");
+            Set<String> alreadyDisabled = packages(adb, "-d");
             int done = 0;
             for (String pkg : targets) {
                 done++;
                 busy(c, Ui.tr("Desligando apps (", "Turning off apps (") + done + "/" + targets.size() + ")…");
-                if (PROTECTED.contains(pkg) || !present.contains(pkg)) continue;
+                if (PROTECTED.contains(pkg) || !present.contains(pkg) || alreadyDisabled.contains(pkg)) continue;
                 String out = adb.shell("pm disable-user --user 0 " + pkg);
-                if (out.contains("disabled-user")) disabled.add(pkg);
+                if (out.contains("disabled-user")) {
+                    disabled.add(pkg);
+                    JSONObject progress = state(c);
+                    progress.put("disabled", new JSONArray(sorted(disabled)));
+                    save(c, progress);
+                }
                 else AppLog.w("could not turn off " + pkg + ": " + out.trim());
             }
             Watchdog.clear(c);
@@ -165,9 +252,6 @@ final class HomeMode {
             busy(c, Ui.tr("Religando os apps…", "Turning the apps back on…"));
             String home = originalHome(s);
             Set<String> toEnable = new HashSet<>(stringList(s, "disabled"));
-            for (String pkg : targets(home, s.optString("originalDream", ""))) {
-                if (!Arrays.asList(DEBLOAT).contains(pkg) && !Arrays.asList(ASSISTANT).contains(pkg)) toEnable.add(pkg);
-            }
             Set<String> present = packages(adb, "");
             int done = 0;
             List<String> failed = new ArrayList<>();
@@ -181,10 +265,15 @@ final class HomeMode {
             }
             busy(c, Ui.tr("Devolvendo o Início original…", "Restoring the original home screen…"));
             boolean homeOk = restoreHome(adb, home);
-            adb.shell("settings delete secure screensaver_components");
+            String dreamSetting = s.optString("originalDreamSetting", "null");
+            if ("null".equals(dreamSetting)) adb.shell("settings delete secure screensaver_components");
+            else adb.shell("settings put secure screensaver_components '" + dreamSetting.replace("'", "'\"'\"'") + "'");
             s = state(c);
             s.put("mode", ORIGINAL).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray(failed));
+            Set<String> optional = new HashSet<>(stringList(s, "optionalDisabled"));
+            optional.retainAll(failed);
+            s.put("optionalDisabled", new JSONArray(sorted(optional)));
             save(c, s);
             if (failed.isEmpty() && homeOk) {
                 notice(c, Ui.tr("Modo original: Início, tela de descanso e apps de fábrica de volta.",
@@ -222,7 +311,7 @@ final class HomeMode {
             try (Adb adb = Adb.connect(app, 10_000, null)) {
                 JSONObject s = state(app);
                 String home = originalHome(s);
-                adb.shell("pm enable " + GOOGLE_SETUP);
+                if (stringList(s, "disabled").contains(GOOGLE_SETUP)) adb.shell("pm enable " + GOOGLE_SETUP);
                 restoreHome(adb, home);
                 String homePkg = packageOf(home);
                 JSONArray kept = new JSONArray();
@@ -262,9 +351,6 @@ final class HomeMode {
                 boolean reverted = s.optBoolean("homeReverted");
                 String home = originalHome(s);
                 Set<String> wanted = new HashSet<>(stringList(s, "disabled"));
-                for (String pkg : targets(home, s.optString("originalDream", ""))) {
-                    if (!reverted || !(pkg.equals(packageOf(home)) || pkg.equals(GOOGLE_SETUP))) wanted.add(pkg);
-                }
                 Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
                 for (String pkg : sorted(wanted)) {
                     if (PROTECTED.contains(pkg) || !present.contains(pkg)) continue;
@@ -309,8 +395,7 @@ final class HomeMode {
         out.add(GOOGLE_SETUP);
         String dreamPkg = packageOf(dream);
         if (dreamPkg != null && !dreamPkg.equals(PKG) && !dreamPkg.equals(homePkg)) out.add(dreamPkg);
-        out.addAll(Arrays.asList(DEBLOAT));
-        if (Config.DISABLE_ASSISTANT) out.addAll(Arrays.asList(ASSISTANT));
+        // Optional packages are changed only by the explicit debloating screen.
         return out;
     }
 
@@ -435,6 +520,11 @@ final class HomeMode {
             if (m.find()) pss += Long.parseLong(m.group(1));
         }
         if (pss > 0) putMetric(c, mode, "homePssMB", pss / 1024);
+        if (FREE.equals(mode)) {
+            Matcher main = total.matcher(adb.shell("dumpsys meminfo " + PKG));
+            long mainPss = main.find() ? Long.parseLong(main.group(1)) : 0;
+            if (pss > 0) putMetric(c, mode, "appPssMB", (pss + mainPss) / 1024);
+        }
     }
 
     private static void putMetric(Context c, String mode, String key, long value) throws JSONException {

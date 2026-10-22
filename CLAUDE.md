@@ -86,3 +86,11 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
   *Original* can bring it back.
 - Don't change the TV's picture, sound, network or account settings.
 - Keep the way back working: the *Original* mode and the watchdog.
+
+## Fork-specific instructions (take precedence over upstream workflow above)
+
+- Do not assume the target OS from earlier conversation. Wait for explicit reconfirmation before any SDK or version-specific compatibility change; see PORTING.md.
+- Optional debloating is opt-in through Performance & Apps, separate from launcher activation. No package checklist is applied automatically, including Assistant. Never add unverified Xiaomi package IDs.
+- Preserve ownership: restore only packages this app disabled, not those already disabled beforehand. Persist successful mutations even when a later package fails.
+- Runtime performance preferences live in the UI process; package state changes remain in HomeMode/ModeJob.
+- Run `bash tools/test.sh` as well as `./build.sh`. Do not report device compatibility or measured improvements from compilation alone.

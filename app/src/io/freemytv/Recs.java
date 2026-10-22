@@ -169,7 +169,7 @@ final class Recs {
     /** This hour's 3, movies only ("movie") or shows only ("tv"); null = both (the home screen tabs). */
     List<Pick> now(String kind) {
         List<Pick> list = new ArrayList<>();
-        if (!hasKey(context)) return list;    // no TMDB key: no recommendations
+        if (!Performance.recommendations || !hasKey(context)) return list;    // no TMDB key: no recommendations
         for (Pick p : picks) {
             if ((kind == null || kind.equals(p.kind)) && (!p.detailed || p.pkg != null)) list.add(p);   // app missing: skip
         }
@@ -200,7 +200,7 @@ final class Recs {
 
     /** The pick's ready backdrop (or null: builds it in the background and notifies when it's ready). */
     Backdrop backdrop(Pick p) {
-        if (p == null || p.backdrop == null) return null;
+        if (!Performance.recommendations || p == null || p.backdrop == null) return null;
         final String key = p.backdrop;    // the details may swap the image midway
         synchronized (images) {
             Backdrop b = images.get(key);
@@ -209,6 +209,7 @@ final class Recs {
         }
         io.execute(() -> {
             try {
+                if (!Performance.recommendations) return;
                 loadImage(p);
             } finally {
                 synchronized (images) { pending.remove(key); }
@@ -222,12 +223,12 @@ final class Recs {
     }
 
     private File imageFile(Pick p) {
-        return new File(new File(context.getCacheDir(), "recs"), p.backdrop.replace("/", ""));
+        return new File(new File(context.getCacheDir(), "recs"), (Performance.lightweight ? "small-" : "full-") + p.backdrop.replace("/", ""));
     }
 
     /** With a key: fetches the list if stale or the time of day (morning/afternoon/night) changed; then the details. */
     void refreshIfStale() {
-        if (!hasKey(context) || fetching) return;
+        if (!Performance.recommendations || !hasKey(context) || fetching) return;
         long now = System.currentTimeMillis();
         long stamp = Config.TMDB_KEY.hashCode() * 31L + REGION.hashCode();   // a new key or country refetches
         boolean newKey = stamp != keyStamp;
@@ -248,6 +249,7 @@ final class Recs {
                 int failures = 0, tried = 0;
                 String last = "";
                 for (Pick pick : wanted()) {
+                    if (!Performance.recommendations) break;
                     tried++;
                     try {
                         if (!pick.detailed) fetchDetails(pick);
@@ -274,6 +276,10 @@ final class Recs {
     }
 
     /** Home screen design: the ready images are rebuilt for it (the light design uses cards, not the whole photo). */
+    void clearImages() {
+        synchronized (images) { images.clear(); }
+    }
+
     void setLight(boolean value) {
         if (value == light) return;
         light = value;
@@ -288,7 +294,7 @@ final class Recs {
      */
     List<Pick> showcase() {
         List<Pick> out = new ArrayList<>();
-        if (!hasKey(context)) return out;
+        if (!Performance.recommendations || Performance.lightweight || !hasKey(context)) return out;
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (Pick p : wanted()) if (hasImage(p) && seen.add(franchise(p.title))) out.add(p);
         for (Pick p : picks) {
@@ -307,7 +313,8 @@ final class Recs {
      * time in the background, so it has more photos. Not used otherwise.
      */
     void prefetchAll() {
-        if (!hasKey(context) || fetching) return;
+        if (Performance.lightweight) return;
+        if (!Performance.recommendations || !hasKey(context) || fetching) return;
         long sinceFail = System.currentTimeMillis() - failedAt;
         if (failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         List<Pick> todo = new ArrayList<>();
@@ -320,6 +327,7 @@ final class Recs {
             try {
                 // One failing title (gone from TMDB, an image that won't download) doesn't stop the others.
                 for (Pick p : todo) {
+                    if (!Performance.recommendations || Performance.lightweight) break;
                     try {
                         if (!p.detailed) fetchDetails(p);
                         if (p.pkg != null) download(p);
@@ -568,7 +576,7 @@ final class Recs {
         //noinspection ResultOfMethodCallIgnored
         f.getParentFile().mkdirs();
         File part = new File(f.getPath() + ".part");
-        HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL((Performance.lightweight ? "https://image.tmdb.org/t/p/w780" : IMAGES) + p.backdrop).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -584,6 +592,7 @@ final class Recs {
 
     /** Reads the original (≥ 1920 wide) and builds the backdrop (Backdrop: cards plus frosted and glass versions). */
     private void loadImage(Pick p) {
+        final int revision = Performance.revision;
         synchronized (images) {
             if (images.containsKey(p.backdrop)) return;
         }
@@ -595,16 +604,16 @@ final class Recs {
             BitmapFactory.decodeFile(f.getPath(), bounds);
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = 1;
-            while (bounds.outWidth / (opts.inSampleSize * 2) >= Backdrop.W) opts.inSampleSize *= 2;
+            while (bounds.outWidth / (opts.inSampleSize * 2) >= (Performance.lightweight ? 780 : Backdrop.W)) opts.inSampleSize *= 2;
             Bitmap b = BitmapFactory.decodeFile(f.getPath(), opts);
             if (b == null) throw new IOException("unreadable image");
             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight);
             boolean forLight = light;
             Backdrop backdrop = Backdrop.make(b, forLight);
-            if (forLight != light) return;   // the design changed midway: this one is stale
+            if (forLight != light || revision != Performance.revision || !Performance.recommendations) return;   // the design changed midway: this one is stale
             synchronized (images) {
                 images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? 10 : 4)) images.remove(images.keySet().iterator().next());
+                while (images.size() > (Performance.lightweight ? 3 : (forLight ? 10 : 4))) images.remove(images.keySet().iterator().next());
             }
             notifyListeners();
         } catch (IOException | RuntimeException | OutOfMemoryError e) {

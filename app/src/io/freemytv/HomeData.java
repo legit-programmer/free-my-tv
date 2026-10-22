@@ -45,7 +45,7 @@ final class HomeData {
 
     /** BTC, ETH and SOL; in Brazilian reais also the dollar (USDT/BRL), which Binance doesn't list for most currencies. */
     static int coinCount() {
-        return CURRENCY.equals("BRL") ? COINS.length : 3;
+        return Performance.prices ? (CURRENCY.equals("BRL") ? COINS.length : 3) : 0;
     }
 
     static String coinName(int i) {
@@ -108,10 +108,11 @@ final class HomeData {
     void refreshIfStale() {
         long now = System.currentTimeMillis();
         // A negative age (the TV's clock went back) counts as stale: otherwise the data would freeze.
-        if (!fetchingPrices && (now - pricesAt > PRICES_EVERY || now < pricesAt)) {
+        if (Performance.prices && !fetchingPrices && (now - pricesAt > PRICES_EVERY || now < pricesAt)) {
             fetchingPrices = true;
             io.execute(() -> {
                 try {
+                    if (!Performance.prices) return;
                     String body = get(pricesUrl());
                     parsePrices(body);
                     pricesAt = System.currentTimeMillis();
@@ -124,10 +125,11 @@ final class HomeData {
                 }
             });
         }
-        if (!fetchingWeather && (now - weatherAt > WEATHER_EVERY || now < weatherAt)) {
+        if (Performance.weather && !fetchingWeather && (now - weatherAt > WEATHER_EVERY || now < weatherAt)) {
             fetchingWeather = true;
             io.execute(() -> {
                 try {
+                    if (!Performance.weather) return;
                     String body = get(WEATHER_URL);
                     weather = parseWeather(body);
                     weatherAt = System.currentTimeMillis();

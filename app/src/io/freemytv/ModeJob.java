@@ -13,7 +13,7 @@ import android.os.PersistableBundle;
  * the switch finishes, even with the screen showing something else.
  */
 public class ModeJob extends JobService {
-    static final String APPLY = "apply", VERIFY = "verify", REVERT = "revert", MEMORY = "memory";
+    static final String APPLY = "apply", VERIFY = "verify", REVERT = "revert", MEMORY = "memory", DEBLOAT = "debloat";
 
     @Override public boolean onStartJob(JobParameters params) {
         PersistableBundle extras = params.getExtras();
@@ -23,6 +23,7 @@ public class ModeJob extends JobService {
         new Thread(() -> {
             try {
                 switch (action) {
+                    case DEBLOAT: HomeMode.applyDebloat(app, mode); break;
                     case APPLY: HomeMode.applyNow(app, mode); break;
                     case VERIFY: HomeMode.verifyNow(app); break;
                     case REVERT: HomeMode.revertHomeNow(app); break;

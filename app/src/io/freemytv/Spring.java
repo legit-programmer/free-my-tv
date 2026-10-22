@@ -18,6 +18,10 @@ final class Spring {
 
     /** Advances `dt` seconds; returns true while still moving. */
     boolean step(float dt) {
+        if (Performance.lightweight && !settled()) {
+            snap(target);
+            return true; // The final position still needs one redraw.
+        }
         if (settled()) {
             value = target;
             velocity = 0;
