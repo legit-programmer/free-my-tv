@@ -227,13 +227,14 @@ public class SettingsActivity extends Activity {
                 lastSky = up;
                 scene.advance(seconds);
             }
-            scene.drawBackground(c);
+            if (Performance.lightweight) c.drawColor(0xFF101918);
+            else scene.drawBackground(c);
 
             // On the left: big symbol, title, description.
             float cx = 500 * k;
-            Symbols.draw(getContext(), c, "sparkles", cx, 400 * k, 150 * k, 0xEBFFFFFF);
-            c.drawText("Free My TV", cx, 612 * k, title);
-            c.drawText(Ui.tr("Início e tela de descanso da TV", "Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
+            Symbols.draw(getContext(), c, "settings", cx, 400 * k, 100 * k, 0xEBFFFFFF);
+            c.drawText(Ui.tr("Ajustes", "Settings"), cx, 612 * k, title);
+            c.drawText(Ui.tr("Início e descanso", "Home & screensaver"), cx, 660 * k, subtitle);
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
             if (screen == MAIN) drawMain(c, seconds); else drawChoice(c);

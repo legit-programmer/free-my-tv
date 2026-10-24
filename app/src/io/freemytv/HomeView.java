@@ -584,7 +584,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Busy: something is moving, or the sheet or the drawer is open.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving;
-        Choreographer.getInstance().postFrameCallbackDelayed(this, busy ? (Performance.lightweight ? 16 : 0) : 250);
+        Choreographer.getInstance().postFrameCallbackDelayed(this, busy ? (Performance.lightweight ? 16 : 0) : 1000);
     }
 
     private static boolean step(Spring[] springs, float dt) {
@@ -1004,7 +1004,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float pad = SHELF_PAD * k, gap = TILE_GAP * k, th = L_TILE_H * k;
         float full = (CONTENT_R - MARGIN) * k;
         float tw = Math.min(TILE_MAX_W * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
-        float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
+        float width = n * tw + Math.max(0, n - 1) * gap;
+        float left = cinematic() ? MARGIN * k : (w - width) / 2f;
         float top = L_PLATTER_TOP * k;
         platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
         float x = left, y = top + pad;
@@ -1096,7 +1097,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawShelfTile(Canvas c, int i) {
         HomeApps.Item it = shelf.get(i);
-        float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f;
+        float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + (cinematic() ? 0.06f : FOCUS_GROW) * f;
         RectF base = tileRects[i];
         float bw = base.width(), bh = base.height(), r0 = TILE_RADIUS * k;
         float cx = base.centerX(), cy = base.centerY();
@@ -1113,7 +1114,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!cinematic()) c.drawRoundRect(tmp, r0, r0, shadowDeep);
         c.restore();
         int[] style = TILE_STYLE.get(it.key);
-        if (it.logo != null && style != null) {
+        if (cinematic()) {
+            tileFill.setShader(null);
+            tileFill.setColor(blend(0xFF1D2928, 0xFF34443E, fc));
+            c.drawRoundRect(cell, r, r, tileFill);
+            if (it.logo != null) drawLogo(c, it, cell, s, style == null ? 0 : style[2]);
+            else if (it.symbol != null) Symbols.draw(getContext(), c, it.symbol,
+                    cell.centerX(), cell.centerY(), 46 * k, CinematicHome.ACCENT);
+            else if (it.tile != null) c.drawBitmap(it.tile, null, cell, bitmapPaint);
+        } else if (it.logo != null && style != null) {
             tileFill.setShader(new LinearGradient(0, cell.top, 0, cell.bottom, style[0], style[1], Shader.TileMode.CLAMP));
             c.drawRoundRect(cell, r, r, tileFill);
             tileFill.setShader(null);
@@ -1139,7 +1148,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (cinematic() && fc > 0.01f) {
             rim.setShader(null);
-            rim.setColor(0xFFC9AB7A);
+            rim.setColor(CinematicHome.ACCENT);
             rim.setStrokeWidth(3 * k);
             c.drawRoundRect(cell, r, r, rim);
         }
@@ -1483,7 +1492,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawSheet(Canvas c) {
-        c.drawColor(0xA8000000);
+        c.drawColor(cinematic() ? 0xFF101918 : 0xA8000000);
         float shift = scroll.value * GRID_ROW * k;
         c.drawText(Ui.tr("Todos os Apps", "All Apps"), w / 2f, 124 * k - shift, sheetTitle);
         int n = others.size();
@@ -1517,6 +1526,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         cell.set(cx - base.width() * s / 2, cy - base.height() * s / 2, cx + base.width() * s / 2, cy + base.height() * s / 2);
         float r = radius * s;
         float fc = Ui.clamp(f);
+        if (cinematic()) {
+            fill.setShader(null);
+            fill.setColor(0xFF263631);
+            c.drawRoundRect(cell, r, r, fill);
+            clip.reset();
+            clip.addRoundRect(cell, r, r, Path.Direction.CW);
+            c.save();
+            c.clipPath(clip);
+            if (image != null) c.drawBitmap(image, null, cell, bitmapPaint);
+            c.restore();
+            if (fc > 0.01f) {
+                rim.setShader(null);
+                rim.setColor(CinematicHome.ACCENT);
+                rim.setStrokeWidth(3 * k);
+                c.drawRoundRect(cell, r, r, rim);
+            }
+            return;
+        }
         if (f > 0.01f) {
             tmp.set(cell);
             tmp.offset(0, 16 * k * f);
@@ -2054,6 +2081,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * white with a dark icon (the tvOS focus) and its name appears below it.
      */
     private void drawLightButtons(Canvas c) {
+        if (cinematic()) {
+            for (int i = 0; i < 3; i++) {
+                RectF r = topRects[3 + i];
+                boolean selected = zone == Z_TOP && topIndex == 3 + i;
+                fill.setShader(null);
+                fill.setColor(selected ? CinematicHome.ACCENT : 0xFF263631);
+                c.drawRoundRect(r, 12 * k, 12 * k, fill);
+                Symbols.draw(getContext(), c, lightButtons.get(i).symbol, r.centerX(), r.centerY(),
+                        28 * k, selected ? 0xFF15201D : 0xFFE0E5DF);
+                if (selected) {
+                    lTip.setColor(0xFFE0E5DF);
+                    float x = Math.min(r.centerX(), CONTENT_R * k - lTip.measureText(lightButtons.get(i).label) / 2);
+                    c.drawText(lightButtons.get(i).label, x, r.bottom + 44 * k, lTip);
+                }
+            }
+            return;
+        }
         applyTone();
         for (int i = 0; i < 3; i++) {
             RectF r = topRects[3 + i];
