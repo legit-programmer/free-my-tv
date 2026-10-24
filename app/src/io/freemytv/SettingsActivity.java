@@ -227,7 +227,8 @@ public class SettingsActivity extends Activity {
                 lastSky = up;
                 scene.advance(seconds);
             }
-            scene.drawBackground(c);
+            if (Performance.lightweight) c.drawColor(0xFF101918);
+            else scene.drawBackground(c);
 
             // On the left: big symbol, title, description.
             float cx = 500 * k;
