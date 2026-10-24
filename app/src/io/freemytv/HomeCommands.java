@@ -30,7 +30,8 @@ final class HomeCommands {
         for (String line : output.split("\n")) {
             String value = line.trim();
             if (value.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/[A-Za-z0-9_.$]+")
-                    && !value.endsWith("ResolverActivity") && !value.endsWith("ChooserActivity")) return value;
+                    && !value.endsWith("ResolverActivity") && !value.endsWith("ChooserActivity")
+                    && !value.endsWith("FallbackHome")) return value;
         }
         return "";
     }

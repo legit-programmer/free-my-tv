@@ -18,6 +18,7 @@ public final class CompatibilityTest {
         eq("", HomeCommands.component("com.stock/.Home;reboot"));
         eq("", HomeCommands.component("Error/nope"));
         eq("", HomeCommands.component("com.stock/.ChooserActivity"));
+        eq("", HomeCommands.component("com.android.settings/.FallbackHome"));
         eq("io.freemytv/io.freemytv.HomeActivity", HomeCommands.component("io.freemytv/io.freemytv.HomeActivity"));
         eq(true, HomeCommands.releaseOwnRole(cmd -> {
             if (cmd.contains("role")) throw new AssertionError("No role on Android 9");

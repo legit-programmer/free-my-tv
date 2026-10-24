@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
 
 import java.io.File;
@@ -37,14 +38,15 @@ public final class CompatSmoke extends Instrumentation {
             check(view.getWidth() > 0, "Home did not lay out");
             screenshot("cinematic");
             if (HomeApps.shelf(c, false).get(0).kind == HomeApps.ALL_APPS) {
-                sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+                key(home, KeyEvent.KEYCODE_DPAD_CENTER);
                 screenshot("all-apps");
-                sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+                ui(() -> check(view.getChildAt(6).getVisibility() == View.VISIBLE, "All Apps did not open"));
+                key(home, KeyEvent.KEYCODE_BACK);
             }
             for (int key : new int[] {KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT,
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK}) {
-                sendKeyDownUpSync(key);
+                key(home, key);
             }
             waitForIdleSync();
             // Settings and tuning are real activities, in the same isolated UI process.
@@ -127,6 +129,14 @@ public final class CompatSmoke extends Instrumentation {
             screenshot.compress(Bitmap.CompressFormat.PNG, 100, out);
         }
         screenshot.recycle();
+    }
+
+    private void key(HomeActivity activity, int code) {
+        // Route through Activity just like a remote; emulator system navigation must not steal the event.
+        ui(() -> {
+            activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+            activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+        });
     }
 
     private void ui(Runnable action) {

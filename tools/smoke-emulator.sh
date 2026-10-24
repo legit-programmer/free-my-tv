@@ -9,6 +9,7 @@ resolve_home() {
 }
 set_home() {
   local output
+  printf 'Selecting HOME: %s\n' "$1" | tee -a out/compat/home-commands.txt
   for attempt in {1..10}; do
     output="$(adb shell cmd package set-home-activity --user 0 "$1" 2>&1)" || true
     printf '%s\n' "$output" | tee -a out/compat/home-commands.txt
@@ -19,8 +20,8 @@ set_home() {
 }
 original_home="$(resolve_home)"
 # Fresh Google APIs images can expose the chooser while their initial HOME role is being provisioned.
-if [[ ! "$original_home" =~ ^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+/[A-Za-z0-9_.$]+$ ]]; then
-  mapfile -t homes < <(adb shell cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME | tr -d '\r' | grep -E '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+/[A-Za-z0-9_.$]+$')
+if [[ ! "$original_home" =~ ^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+/[A-Za-z0-9_.$]+$ || "$original_home" == *FallbackHome || "$original_home" == *ResolverActivity || "$original_home" == *ChooserActivity ]]; then
+  mapfile -t homes < <(adb shell cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME | tr -d '\r' | grep -E '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+/[A-Za-z0-9_.$]+$' | grep -Ev 'FallbackHome$|ResolverActivity$|ChooserActivity$')
   [ "${#homes[@]}" = 1 ] || { echo 'Cannot identify emulator launcher.' >&2; exit 1; }
   original_home="${homes[0]}"
 fi

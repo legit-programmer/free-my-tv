@@ -39,8 +39,8 @@ public class TuningActivity extends Activity {
         scroll.addView(page);
         setContentView(scroll);
         text(Ui.tr("Desempenho e apps", "Performance & Apps"), 28);
-        text(Ui.tr("As opções visuais são aplicadas ao voltar ao Início. A versão mínima do Android não mudou.",
-                "Visual changes apply when you return Home. The minimum Android version is unchanged."), 18);
+        text(Ui.tr("As opções visuais são aplicadas ao voltar ao Início.",
+                "Visual changes apply when you return Home."), 18);
         toggle("lightweight", Ui.tr("Modo leve: fundo estático, imagens menores, descanso só com relógio",
                 "Lightweight mode: static background, smaller images, clock-only screensaver"), Performance.lightweight);
         toggle("recommendations", Ui.tr("Recomendações TMDB (precisa de chave)", "TMDB recommendations (requires your key)"), Performance.recommendations);

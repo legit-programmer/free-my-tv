@@ -42,7 +42,7 @@ The user confirmed **Android 9 (API 28)** on the 1 GB Mi TV 4A on 2026-10-24. Th
 ## Validation performed in development
 
 - Android APK build using JDK 17 and Android SDK platform/build-tools 34.
-- Nine debloat policy cases plus 16 compatibility cases covering HOME discovery, chooser/error responses, legacy role avoidance and old/new PSS formats.
+- Nine debloat policy cases plus 17 compatibility cases covering HOME discovery, chooser/error responses, legacy role avoidance and old/new PSS formats.
 - Shared sources compile against SDK 28. A separate instrumentation APK and CI emulator matrix exercise API 28 and 33 startup, navigation, settings/tuning, clock modes, recommendation fallback and HOME selection/restoration. See the PR checks for runtime results; physical TV validation and benchmarks remain pending.
 
 ## Operational notes
