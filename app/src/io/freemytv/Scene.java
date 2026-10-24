@@ -44,7 +44,7 @@ final class Scene {
                 glassPaint.setShader(glass == null ? null : glass.shader());
                 liquidPaint.setShader(liquid == null ? null : liquid.shader());
             }
-        } catch (RuntimeException | LinkageError e) {   // Android 12: no AGSL, flat look instead
+        } catch (RuntimeException | LinkageError e) {   // Shader creation can fail even on a supported GPU.
             AppLog.w("shader unavailable, using gradient: " + e.getMessage());
             aurora = null;
             glass = null;

@@ -36,6 +36,11 @@ public final class CompatSmoke extends Instrumentation {
             HomeView view = (HomeView) ((ViewGroup) home.findViewById(android.R.id.content)).getChildAt(0);
             check(view.getWidth() > 0, "Home did not lay out");
             screenshot("cinematic");
+            if (HomeApps.shelf(c, false).get(0).kind == HomeApps.ALL_APPS) {
+                sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+                screenshot("all-apps");
+                sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+            }
             for (int key : new int[] {KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT,
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK}) {
