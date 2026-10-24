@@ -17,7 +17,17 @@ Open source. Built with Claude Code. One button to undo.
 
 ## This fork: performance and explicit debloating
 
-This branch adds OS-independent improvements for low-memory TVs. **It does not yet add support for an older Android version.** The minimum SDK remains 31, target SDK 33. Do not install on the Mi TV until its OS is confirmed and compatibility work is completed.
+This fork targets low-memory TVs, including the confirmed **Android 9 (API 28), 1 GB Mi TV 4A**. Minimum SDK and dex minimum are 28; target SDK remains 33. Android 9 uses cached Canvas/Picture drawing and flat glass; Android 13+ can use AGSL effects when lightweight mode is off. The cinematic home and lightweight defaults remain available on Android 9.
+
+The port has an APK build, an API 28 compilation check for common code, and emulator smoke tests for API 28 and 33. Mi TV firmware, local ADB, launcher restoration, remote/HDMI behavior and memory savings still need validation on the physical TV. Start by opening Home as an ordinary app before activating replacement mode:
+
+```bash
+adb connect TV_IP:5555
+adb install -r FreeMyTV.apk
+adb shell am start -n io.freemytv/.HomeActivity
+```
+
+Enable network ADB in the TV's developer settings and approve the prompts. Same-network access works without a cable when firmware exposes TCP ADB. A home chooser must have a real default before activation; if the app cannot identify it, it stops without disabling packages. No Xiaomi-specific debloat entries have been guessed.
 
 Open **Settings → Performance & Apps**:
 
@@ -33,7 +43,7 @@ Open **Settings → Performance & Apps**:
 
 There are **no guessed Xiaomi package entries**. Use `bash tools/inspect-tv.sh [adb-serial]` after connecting ADB to collect the read-only inventory. See [PORTING.md](PORTING.md) for deferred work and device checks.
 
-Local validation: `JAVA_HOME=/path/to/jdk ANDROID_HOME=/path/to/sdk ./build.sh` and `bash tools/test.sh`. CI performs the same build and policy tests. No performance benchmark or on-TV UI validation has been completed for this fork.
+Local validation: `JAVA_HOME=/path/to/jdk ANDROID_HOME=/path/to/sdk ./build.sh`, `bash tools/test.sh` and `bash tools/check-api28.sh` (install SDK platforms 28 and 34). CI also builds a separate test APK and runs it on Android 9 and 13 emulators, covering Home, remote navigation, settings, tuning, both clock modes, and the empty recommendation layout. `tools/smoke-emulator.sh` refuses physical devices and never disables system packages. CI uploads APK and screenshot/log artifacts. No Mi TV performance benchmark has been completed.
 
 The feature descriptions below describe upstream full mode. Its TCL benchmark is not a benchmark of this fork or a promise for a Mi TV.
 
@@ -50,7 +60,7 @@ The feature descriptions below describe upstream full mode. Its TCL benchmark is
 
 ## Install
 
-About ten minutes. You need a Google TV or Android TV (Android 12 or newer) and a computer on the same Wi-Fi.
+About ten minutes. You need a Google TV or Android TV (Android 9 or newer) and a computer on the same Wi-Fi.
 
 ### The easy way: Claude Code
 
@@ -151,7 +161,7 @@ It's your code, and Claude Code finds its way around it. Try:
 
 - **A plain Android app, no Gradle, no libraries.** [`build.sh`](build.sh) runs aapt2 → javac → d8 → zipalign → apksigner and makes a 2 MB APK.
 - **It uses the TV's own ADB, from inside the TV.** The app connects to `127.0.0.1:5555` with its own key (that's the *Allow USB debugging?* prompt) and runs the same commands you would: `cmd package set-home-activity`, `settings put secure screensaver_components`, `pm disable-user`. Nothing listens to the network.
-- **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 12).
+- **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 9–12).
 - **A safety net.** A watchdog in a separate process brings back the stock home screen after three crashes in five minutes, and a boot check keeps your choice after TV updates.
 - **Data** from TMDB (trending titles, new releases and which app streams what in your country), Open-Meteo (forecast, sunrise and sunset) and Binance (24-hour prices).
 

@@ -69,9 +69,9 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
 
 ## The code
 
-- Java 8 language level, minSdk 31 (Android 12), targetSdk 33. No Gradle, no libraries: only the Android SDK.
+- Java 8 language level, minSdk 28 (Android 9), targetSdk 33. No Gradle, no libraries: only the Android SDK.
 - The home screen is drawn by hand on one Canvas (`HomeView`); the glass and the sky are AGSL shaders (`Shaders`,
-  Android 13+, with a fallback for 12). Keep it at 60 fps: no allocations in `onDraw`, no work on the UI thread.
+  Android 13+, with Canvas/Picture and flat glass on Android 9–12). Keep it at 60 fps: no allocations in `onDraw`, no work on the UI thread.
 - `HomeMode` runs every switch as a background job (`ModeJob`) in the main process; the UI is in the `:home`
   process. `Watchdog` goes back to the stock home screen after 3 crashes in 5 minutes.
 - On-screen text is bilingual, `Ui.tr("pt", "en")`: add both. Comments in English, short, only where the why
@@ -89,8 +89,8 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
 
 ## Fork-specific instructions (take precedence over upstream workflow above)
 
-- Do not assume the target OS from earlier conversation. Wait for explicit reconfirmation before any SDK or version-specific compatibility change; see PORTING.md.
+- The user explicitly confirmed Android 9 (API 28) on the Mi TV 4A on 2026-10-24. Minimum SDK/dex API is 28; target remains 33. Keep newer graphics APIs in the gated adapters (DisplayLayer, ShaderProgram, Frost.Api33). Do not add unguarded calls from API 29+ to common code. See PORTING.md.
 - Optional debloating is opt-in through Performance & Apps, separate from launcher activation. No package checklist is applied automatically, including Assistant. Never add unverified Xiaomi package IDs.
 - Preserve ownership: restore only packages this app disabled, not those already disabled beforehand. Persist successful mutations even when a later package fails.
 - Runtime performance preferences live in the UI process; package state changes remain in HomeMode/ModeJob.
-- Run `bash tools/test.sh` as well as `./build.sh`. Do not report device compatibility or measured improvements from compilation alone.
+- Run `bash tools/test.sh`, `./build.sh` and `bash tools/check-api28.sh`; CI also exercises the API 28/33 emulator smoke tests. Do not report device compatibility or measured improvements from compilation alone.

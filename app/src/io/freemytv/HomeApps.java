@@ -129,6 +129,8 @@ final class HomeApps {
             it.logoScale = Float.parseFloat(d[5]);
             items.add(it);
         }
+        // A fresh installation may have none of the suggested streaming apps. Keep Home usable.
+        if (items.isEmpty()) items.add(special(c, ALL_APPS, "all", Ui.tr("Todos os Apps", "All Apps"), "apps"));
         return items;
     }
 

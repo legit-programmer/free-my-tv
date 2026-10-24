@@ -1,6 +1,6 @@
 # Mi TV work status
 
-The user asked us not to assume or implement an OS version until they reconfirm it. This work deliberately keeps the existing SDK requirements and renderer API compatibility unchanged.
+The user confirmed **Android 9 (API 28)** on the 1 GB Mi TV 4A on 2026-10-24. The port lowers the installation and dex minimum to API 28; target SDK stays 33.
 
 ## Completed without assuming an OS
 
@@ -13,12 +13,15 @@ The user asked us not to assume or implement an OS version until they reconfirm 
 - Home-process and whole-app PSS metrics, plus available system memory.
 - Read-only device inventory helper, JVM policy tests and Android build CI.
 
-## Deferred pending OS confirmation
+## Android 9 port
 
-- Lowering min SDK / dex minimum (currently 31); changing target SDK.
-- Replacing RenderNode/RecordingCanvas paths or isolating newer shader APIs for older systems.
-- OS-specific HOME role commands and restoration fallbacks.
-- Testing ADB transport, boot/background restrictions and job behavior on the target firmware.
+- Minimum SDK and dex API 28; version 1.1 / code 2. Compile SDK 34 and target SDK 33 remain unchanged.
+- DisplayLayer caches drawing commands with Picture on API 28 and an isolated RenderNode backend on API 29+. No full-screen bitmap is added for the legacy clock/caption cache.
+- ShaderProgram isolates AGSL classes behind an API 33 gate. Older systems retain gradient backgrounds, plain glass, text and app navigation, even with lightweight mode off.
+- BitmapShader filtering's newer API is similarly isolated. Common sources are compiled separately against android-28/android.jar; only the three guarded graphics adapters require the modern compile SDK.
+- HOME discovery resolves the real package-manager activity first. Role commands run only on API 29+. Chooser/error responses never count as an original launcher; activation stops before mutations if the original cannot be recorded.
+- Launcher selection/restoration uses `cmd package set-home-activity --user 0`, available on Android 9. Memory reports accept the older TOTAL: format and query exact PIDs to avoid counting :home twice.
+- Screensaver stop discards cached commands before releasing photo bitmaps.
 
 ## Deferred pending real device inventory
 
@@ -39,8 +42,8 @@ The user asked us not to assume or implement an OS version until they reconfirm 
 ## Validation performed in development
 
 - Android APK build using JDK 17 and Android SDK platform/build-tools 34.
-- Nine JVM cases covering optional package disable/restore, pre-disabled packages, missing packages, protected/unapproved packages and external re-enabling.
-- No TV, emulator UI run or target-device benchmark was available.
+- Nine debloat policy cases plus 17 compatibility cases covering HOME discovery, chooser/error responses, legacy role avoidance and old/new PSS formats.
+- Shared sources compile against SDK 28. A separate instrumentation APK and CI emulator matrix exercise API 28 and 33 startup, navigation, settings/tuning, clock modes, recommendation fallback and HOME selection/restoration. See the PR checks for runtime results; physical TV validation and benchmarks remain pending.
 
 ## Operational notes
 
@@ -53,4 +56,4 @@ The user asked us not to assume or implement an OS version until they reconfirm 
 
 ## Cinematic Home validation
 
-The default recommendations-off view now uses a static cinematic layout. SDK levels are unchanged. On-device checks still required: 720p/1080p/4K legibility, long app names and 12-hour clocks, cold-start logos, shelf → shortcuts → shelf navigation, drawer and All Apps return, Home reset, recommendation toggle, pause/resume and idle CPU/PSS. The 250 ms idle callback checks state without invalidating unchanged layers; it is not a zero-wakeup event loop.
+The default recommendations-off view now uses a static cinematic layout. Minimum SDK is now 28; target remains 33. On-device checks still required: 720p/1080p/4K legibility, long app names and 12-hour clocks, cold-start logos, shelf → shortcuts → shelf navigation, drawer and All Apps return, Home reset, recommendation toggle, pause/resume and idle CPU/PSS. The 250 ms idle callback checks state without invalidating unchanged layers; it is not a zero-wakeup event loop.

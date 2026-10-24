@@ -6,10 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RecordingCanvas;
 import android.graphics.RectF;
-import android.graphics.RenderNode;
-import android.graphics.RuntimeShader;
 import android.graphics.Shader;
 
 /**
@@ -22,7 +19,7 @@ import android.graphics.Shader;
  */
 final class Scene {
     final Shaders.Palette palette = new Shaders.Palette();
-    private RuntimeShader aurora, glass, liquid;
+    private ShaderProgram aurora, glass, liquid;
     private final Frost frost = new Frost();
     private final Paint auroraPaint = new Paint();
     private final Paint glassPaint = new Paint();
@@ -30,7 +27,7 @@ final class Scene {
     private final Paint flatFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint flatRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fallback = new Paint();
-    private final RenderNode auroraNode = new RenderNode("aurora");
+    private final DisplayLayer auroraNode = DisplayLayer.create("aurora");
     private int w = 1, h = 1, lw = 1, lh = 1;
     private float speed = 1, baseDim, dim, time;
     private boolean auroraDirty = true, imageFrost, imageGlass;
@@ -40,20 +37,20 @@ final class Scene {
     Scene() {
         try {
             if (!Performance.lightweight) {
-                aurora = new RuntimeShader(Shaders.AURORA);
-                glass = new RuntimeShader(Shaders.GLASS);
-                liquid = new RuntimeShader(Shaders.LIQUID);
-                auroraPaint.setShader(aurora);
-                glassPaint.setShader(glass);
-                liquidPaint.setShader(liquid);
+                aurora = ShaderProgram.create(Shaders.AURORA);
+                glass = ShaderProgram.create(Shaders.GLASS);
+                liquid = ShaderProgram.create(Shaders.LIQUID);
+                auroraPaint.setShader(aurora == null ? null : aurora.shader());
+                glassPaint.setShader(glass == null ? null : glass.shader());
+                liquidPaint.setShader(liquid == null ? null : liquid.shader());
             }
-        } catch (RuntimeException | LinkageError e) {   // Android 12: no AGSL, flat look instead
+        } catch (RuntimeException | LinkageError e) {   // Shader creation can fail even on a supported GPU.
             AppLog.w("shader unavailable, using gradient: " + e.getMessage());
             aurora = null;
             glass = null;
             liquid = null;
         }
-        auroraNode.setUseCompositingLayer(true, null);
+        auroraNode.setUseCompositingLayer(true);
         flatRim.setStyle(Paint.Style.STROKE);
         flatRim.setColor(0x33FFFFFF);
         flatRim.setStrokeWidth(1.5f);
@@ -151,7 +148,7 @@ final class Scene {
 
     private static BitmapShader linear(Bitmap b) {
         BitmapShader s = new BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-        s.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
+        Frost.filter(s, true);
         return s;
     }
 
@@ -186,7 +183,7 @@ final class Scene {
         imageFrost = true;
         if (glass == null) return;
         BitmapShader s = new BitmapShader(frostImage, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-        s.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
+        Frost.filter(s, true);
         glass.setInputShader("frost", s);
         setFrostScale();
     }
@@ -223,7 +220,7 @@ final class Scene {
             return;
         }
         if (auroraDirty) {
-            RecordingCanvas rc = auroraNode.beginRecording(lw, lh);
+            Canvas rc = auroraNode.beginRecording(lw, lh);
             try {
                 rc.drawPaint(auroraPaint);
             } finally {
@@ -233,7 +230,7 @@ final class Scene {
         }
         c.save();
         c.scale((float) w / lw, (float) h / lh);
-        c.drawRenderNode(auroraNode);
+        auroraNode.draw(c);
         c.restore();
     }
 
