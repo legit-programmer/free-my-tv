@@ -2,98 +2,79 @@ package io.freemytv;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.text.TextPaint;
 import android.text.TextUtils;
 
-/** Static editorial home: reusable paints, a 16 KiB grain tile, and existing app artwork. */
+/** Quiet, static home. No wallpaper bitmap, texture, blur or animated background. */
 final class CinematicHome {
-    private final Paint backdrop = new Paint(), glow = new Paint(), grain = new Paint();
-    private final Paint rule = new Paint(Paint.ANTI_ALIAS_FLAG);
+    static final int ACCENT = 0xFFD8D4B8;
+    private final Paint backdrop = new Paint();
+    private final Paint panel = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF bounds = new RectF(), art = new RectF();
-    private Paint clock, eyebrow, detail;
+    private Paint clock, detail;
     private TextPaint title;
     private float k;
-    private String cachedLabel, fittedLabel;
-    private static final int ACCENT = 0xFFC9AB7A;
-
-    CinematicHome() {
-        // Deterministic, tiled grain: generated once, never animated or fetched.
-        int[] pixels = new int[64 * 64];
-        java.util.Random random = new java.util.Random(19);
-        for (int i = 0; i < pixels.length; i++) pixels[i] = (random.nextInt(7) << 24) | 0x00FFFFFF;
-        Bitmap tile = Bitmap.createBitmap(pixels, 64, 64, Bitmap.Config.ARGB_8888);
-        grain.setShader(new BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT));
-    }
+    private String cachedLabel, fittedLabel, date = "";
+    private long day = -1;
 
     void resize(float scale, int width, int height) {
         k = scale;
         bounds.set(0, 0, width, height);
         backdrop.setShader(new LinearGradient(0, 0, width, height,
-                new int[] {0xFF111820, 0xFF101518, 0xFF070A0D}, null, Shader.TileMode.CLAMP));
-        glow.setShader(new RadialGradient(1490 * k, 370 * k, 740 * k,
-                new int[] {0x303D918E, 0x102D6868, 0x002D6868}, null, Shader.TileMode.CLAMP));
-        clock = Ui.numbers(Ui.thin, 164 * k, 0xFFF1EDE5);
-        eyebrow = Ui.text(Ui.medium, 22 * k, ACCENT);
-        eyebrow.setLetterSpacing(0.18f);
-        title = new TextPaint(Ui.text(Ui.displaySemibold, 84 * k, 0xFFF1EDE5));
-        detail = Ui.text(Ui.regular, 25 * k, 0xFFA7AFB3);
+                new int[] {0xFF101919, 0xFF172523, 0xFF0C1112}, null, Shader.TileMode.CLAMP));
+        clock = Ui.numbers(Ui.regular, 46 * k, 0xFFF1F0E8);
+        title = new TextPaint(Ui.text(Ui.displaySemibold, 100 * k, 0xFFF1F0E8));
+        detail = Ui.text(Ui.regular, 27 * k, 0xFFACB7B2);
         cachedLabel = null;
     }
 
     void background(Canvas c) {
         c.drawRect(bounds, backdrop);
-        c.drawRect(bounds, glow);
-        c.drawRect(bounds, grain);
+        // A restrained architectural panel; drawn directly, no full-screen image allocation.
+        panel.setColor(0xFF213330);
+        art.set(1230 * k, 230 * k, 1836 * k, 700 * k);
+        c.drawRoundRect(art, 12 * k, 12 * k, panel);
+        panel.setColor(0xFF768578);
+        c.drawRect(1230 * k, 230 * k, 1234 * k, 700 * k, panel);
     }
 
     void hero(Canvas c, Context context, String time, HomeApps.Item item, boolean focused) {
         if (clock == null) return;
-        c.drawText("FREE MY TV", 84 * k, 108 * k, eyebrow);
-        rule.setColor(ACCENT);
-        c.drawRect(84 * k, 258 * k, 136 * k, 262 * k, rule);
-        c.drawText(Ui.tr("SEU TEMPO. SUA TELA.", "YOUR TIME. YOUR SCREEN."), 84 * k, 309 * k, eyebrow);
-        // Fit even a wide 12-hour clock without crossing the asymmetric divider.
-        float clockScale = Math.min(1, 650 * k / Math.max(1, clock.measureText(time)));
-        c.save();
-        c.translate(80 * k, 492 * k);
-        c.scale(clockScale, clockScale);
-        c.drawText(time, 0, 0, clock);
-        c.restore();
-        c.drawText(Ui.tr("Escolha algo que vale seu tempo.", "Make room for something good."), 84 * k, 558 * k, detail);
-        rule.setColor(0xFF343C40);
-        c.drawRect(810 * k, 280 * k, 811 * k, 674 * k, rule);
-
-        String label = item == null ? Ui.tr("Sua tela", "Your screen") : item.label;
+        long now = System.currentTimeMillis();
+        long today = now / 60_000; // Also respects timezone/date changes on the next clock tick.
+        if (today != day) {
+            date = android.text.format.DateFormat.getMediumDateFormat(context).format(new java.util.Date(now));
+            day = today;
+        }
+        c.drawText(time, 84 * k, 110 * k, clock);
+        c.drawText(date, 84 * k, 158 * k, detail);
+        String label = item == null ? Ui.tr("Aplicativos", "Apps") : item.label;
         if (!label.equals(cachedLabel)) {
-            fittedLabel = TextUtils.ellipsize(label, title, 860 * k, TextUtils.TruncateAt.END).toString();
+            fittedLabel = TextUtils.ellipsize(label, title, 1070 * k, TextUtils.TruncateAt.END).toString();
             cachedLabel = label;
         }
-        c.drawText(Ui.tr("EM DESTAQUE", "IN THE SPOTLIGHT"), 922 * k, 302 * k, eyebrow);
+        c.drawText(fittedLabel, 80 * k, 506 * k, title);
+        if (focused) c.drawText(Ui.tr("OK para abrir", "OK to open"), 84 * k, 566 * k, detail);
         Bitmap logo = item == null ? null : item.logo;
         if (logo != null) {
-            float fit = Math.min(210 * k / logo.getWidth(), 100 * k / logo.getHeight());
-            art.set(926 * k, 355 * k, 926 * k + logo.getWidth() * fit, 355 * k + logo.getHeight() * fit);
+            float fit = Math.min(350 * k / logo.getWidth(), 180 * k / logo.getHeight());
+            float width = logo.getWidth() * fit, height = logo.getHeight() * fit;
+            art.set(1533 * k - width / 2, 465 * k - height / 2,
+                    1533 * k + width / 2, 465 * k + height / 2);
             c.drawBitmap(logo, null, art, image);
         } else {
             Symbols.draw(context, c, item != null && item.symbol != null ? item.symbol : "apps",
-                    969 * k, 403 * k, 76 * k, ACCENT);
+                    1533 * k, 465 * k, 120 * k, ACCENT);
         }
-        c.drawText(fittedLabel, 920 * k, 570 * k, title);
-        rule.setColor(focused ? ACCENT : 0xFF788287);
-        c.drawCircle(930 * k, 624 * k, 4 * k, rule);
-        c.drawText(focused ? Ui.tr("OK para abrir", "Press OK to open") : Ui.tr("Seus aplicativos, prontos", "Your apps, ready when you are"),
-                950 * k, 633 * k, detail);
-        c.drawText(Ui.tr("SEUS APLICATIVOS", "YOUR APPS"), 84 * k, 779 * k, eyebrow);
+        c.drawText(Ui.tr("Aplicativos", "Apps"), 84 * k, 779 * k, detail);
         detail.setTextAlign(Paint.Align.RIGHT);
-        c.drawText(Ui.tr("↑ Atalhos    ↓ Mais", "↑ Shortcuts    ↓ More"), 1836 * k, 779 * k, detail);
+        c.drawText(Ui.tr("↓ Entradas e atalhos", "↓ Inputs & shortcuts"), 1836 * k, 779 * k, detail);
         detail.setTextAlign(Paint.Align.LEFT);
     }
 }
