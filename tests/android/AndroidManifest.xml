@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.freemytv.tests">
+    <application android:label="Free My TV compatibility tests" />
+    <instrumentation android:name="io.freemytv.CompatSmoke" android:targetPackage="io.freemytv"
+        android:targetProcesses="io.freemytv:home" android:functionalTest="true" />
+</manifest>

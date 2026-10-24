@@ -194,7 +194,9 @@ final class HomeMode {
                 String found = currentHome(adb);
                 home = found != null ? realHome(found) : "";
             }
-            if (home.isEmpty()) throw new IOException("Cannot identify the original launcher; nothing changed");
+            if (home.isEmpty()) throw new IOException(Ui.tr(
+                    "Não foi possível identificar o Início original. Escolha um Início padrão nas configurações da TV primeiro; nada foi alterado.",
+                    "Cannot identify the original launcher. Choose a default Home in TV settings first; nothing changed."));
             String dream = s.optString("originalDream", "");
             if (dream.isEmpty()) dream = defaultDream(adb);
             JSONObject latest = state(c);
@@ -208,7 +210,7 @@ final class HomeMode {
                 measureMemory(c, adb, ORIGINAL);
             }
             busy(c, Ui.tr("Trocando o Início e a tela de descanso…", "Switching the home screen and screensaver…"));
-            check(adb.shell("cmd package set-home-activity " + HOME_ACTIVITY), "Success",
+            check(adb.shell("cmd package set-home-activity --user 0 " + HOME_ACTIVITY), "Success",
                     Ui.tr("o Android não aceitou o novo Início", "Android didn't accept the new home screen"));
             adb.shell("settings put secure screensaver_components " + DREAM);
             List<String> targets = targets(home, dream);
@@ -299,10 +301,9 @@ final class HomeMode {
         if (home.isEmpty() && adb.shell("pm path " + packageOf(GOOGLE_HOME)).contains("package:")) home = GOOGLE_HOME;
         if (!home.isEmpty()) {
             adb.shell("pm enable " + packageOf(home));
-            if (adb.shell("cmd package set-home-activity " + home).contains("Success")) return true;
+            if (adb.shell("cmd package set-home-activity --user 0 '" + home + "'").contains("Success")) return true;
         }
-        adb.shell("cmd role remove-role-holder --user 0 android.app.role.HOME " + PKG);
-        return !homeHolder(adb).contains(PKG);
+        return HomeCommands.releaseOwnRole(adb::shell, Build.VERSION.SDK_INT);
     }
 
     /** Safety net: our home screen crashed 3 times in a row. Only the home screen goes back; the rest stays. */
@@ -364,7 +365,7 @@ final class HomeMode {
                     }
                 }
                 if (!reverted && !homeHolder(adb).contains(PKG)) {
-                    adb.shell("cmd package set-home-activity " + HOME_ACTIVITY);
+                    adb.shell("cmd package set-home-activity --user 0 " + HOME_ACTIVITY);
                     fixed.add(Ui.tr("o Início", "the home screen"));
                 }
                 if (!adb.shell("settings get secure screensaver_components").contains(DREAM)) {
@@ -399,31 +400,15 @@ final class HomeMode {
         return out;
     }
 
-    /** The home screen in use now ("package/activity"): the HOME role holder, among the TV's home screens. */
+    /** Resolve the actual HOME activity on Android 9; use roles only when present on newer systems. */
     private static String currentHome(Adb adb) throws IOException {
-        String holder = homeHolder(adb);
-        if (holder.isEmpty() || holder.contains(PKG)) return null;
-        String list = adb.shell("cmd package query-activities --brief --user 0 -a android.intent.action.MAIN"
-                + " -c android.intent.category.HOME");
-        for (String line : list.split("\n")) {
-            line = line.trim();
-            if (line.startsWith(holder + "/")) return line;
-        }
-        return null;
+        String home = HomeCommands.current(adb::shell, Build.VERSION.SDK_INT);
+        return home.isEmpty() || home.startsWith(PKG + "/") ? null : home;
     }
 
-    /**
-     * The package that is the home screen now, or "". Some Android 12 TVs have no `cmd role get-role-holders` (it
-     * answers "Unknown command"), so then we ask which activity opens HOME.
-     */
     private static String homeHolder(Adb adb) throws IOException {
-        String holder = adb.shell("cmd role get-role-holders --user 0 android.app.role.HOME").trim();
-        if (holder.matches("[\\w.]+(;[\\w.]+)*")) return holder;
-        String[] lines = adb.shell("cmd package resolve-activity --brief --user 0 -a android.intent.action.MAIN"
-                + " -c android.intent.category.HOME").trim().split("\n");
-        String component = lines[lines.length - 1].trim();
-        // With no default home yet, the system's chooser answers ("android/...ResolverActivity"): unknown.
-        return component.contains("/") && !component.startsWith("android/") ? packageOf(component) : "";
+        String home = HomeCommands.current(adb::shell, Build.VERSION.SDK_INT);
+        return home.isEmpty() ? "" : packageOf(home);
     }
 
     /** The recorded home screen of the TV, as {@link #realHome}. */
@@ -514,17 +499,21 @@ final class HomeMode {
         String home = packageOf(originalHome(state(c)));
         String[] processes = FREE.equals(mode) ? new String[] {PKG + ":home"}
                 : home == null ? new String[0] : new String[] {home, home + ":coreservices"};
-        Pattern total = Pattern.compile("TOTAL PSS:\\s+(\\d+)");
-        for (String p : processes) {
-            Matcher m = total.matcher(adb.shell("dumpsys meminfo " + p));
-            if (m.find()) pss += Long.parseLong(m.group(1));
-        }
+        for (String p : processes) pss += processPss(adb, p);
         if (pss > 0) putMetric(c, mode, "homePssMB", pss / 1024);
         if (FREE.equals(mode)) {
-            Matcher main = total.matcher(adb.shell("dumpsys meminfo " + PKG));
-            long mainPss = main.find() ? Long.parseLong(main.group(1)) : 0;
+            long mainPss = processPss(adb, PKG);
             if (pss > 0) putMetric(c, mode, "appPssMB", (pss + mainPss) / 1024);
         }
+    }
+
+    /** Resolve exact PIDs: a package-name meminfo query can include :home and double-count it. */
+    private static long processPss(Adb adb, String process) throws IOException {
+        long total = 0;
+        for (String pid : adb.shell("pidof " + process).trim().split("\\s+")) {
+            if (pid.matches("[0-9]+")) total += MemoryStats.pss(adb.shell("dumpsys meminfo " + pid));
+        }
+        return total;
     }
 
     private static void putMetric(Context c, String mode, String key, long value) throws JSONException {

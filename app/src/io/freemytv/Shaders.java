@@ -1,6 +1,5 @@
 package io.freemytv;
 
-import android.graphics.RuntimeShader;
 
 /**
  * Aurora and glass (Liquid Glass) drawn on the GPU with AGSL. The aurora is procedural, so the glass doesn't need to
@@ -285,7 +284,7 @@ final class Shaders {
             return max;
         }
 
-        void apply(RuntimeShader s) {
+        void apply(ShaderProgram s) {
             s.setFloatUniform("c0", c[0], c[1], c[2]);
             s.setFloatUniform("c1", c[3], c[4], c[5]);
             s.setFloatUniform("c2", c[6], c[7], c[8]);

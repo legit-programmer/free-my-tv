@@ -27,13 +27,20 @@ final class Frost {
         }
         bitmap.setPixels(pixels, 0, W, 0, 0, W, H);
         BitmapShader shader = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-        return filter(shader, BitmapShader.FILTER_MODE_LINEAR);
+        return filter(shader, true);
     }
 
     /** BitmapShader.setFilterMode is Android 13+; older ones filter through the Paint. */
-    static BitmapShader filter(BitmapShader s, int mode) {
-        if (Build.VERSION.SDK_INT >= 33) s.setFilterMode(mode);
+    static BitmapShader filter(BitmapShader s, boolean linear) {
+        if (Build.VERSION.SDK_INT >= 33) Api33.filter(s, linear);
         return s;
+    }
+
+    @android.annotation.TargetApi(33)
+    private static final class Api33 {
+        static void filter(BitmapShader shader, boolean linear) {
+            shader.setFilterMode(linear ? BitmapShader.FILTER_MODE_LINEAR : BitmapShader.FILTER_MODE_NEAREST);
+        }
     }
 
     private static int color(float u, float v, float tt, float dim, float[] c, float aspect) {
