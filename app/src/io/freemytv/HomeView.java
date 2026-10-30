@@ -196,6 +196,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String clockText = "";
     private long clockMinute = -1;
     private boolean okDown, backDown;
+    /** Idle (lock-screen home): the dock, its label and the buttons fade out, leaving the photo and the clock. */
+    private static final long IDLE_MS = 20_000, CHROME_MS = 700;
+    private float chrome = 1, chromeFrom = 1, chromeTo = 1;
+    private long chromeAt;
+    private int swallowUp = -1;      // the key that woke the home: its release does nothing
 
     private Paint labelPaint, metaPaint, clockPaint, buttonPaint, capsuleText, tipPaint, quotePaint, staleQuote;
     private Paint rowTitle, drawerLabel, cardTitle, cardText, cardDim, cardDimRight, bigTemp, hourPaint, hourTemp;
@@ -273,6 +278,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             updatePalette();
             checkNight(true);
             updatePicks();      // three new ones every hour
+            if (cinematic()) cinematic.update(getContext(), wallpaperReady);
+            else cinematic.release();
             handler.postDelayed(this, 15_000);
         }
     };
@@ -333,6 +340,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recs.refreshIfStale();
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
+        if (cinematic()) cinematic.update(getContext(), wallpaperReady);
+        chrome = chromeFrom = chromeTo = 1;
+        chromeAt = 0;
+        swallowUp = -1;
+        scheduleIdle();
         checkNotices();
         reload();
         updatePalette();
@@ -349,6 +361,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         running = false;
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(tick);
+        handler.removeCallbacks(idle);
         data.removeListener(this);
         recs.removeListener(this);
         if (tvInputs != null) tvInputs.unregisterCallback(inputCallback);
@@ -361,6 +374,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Starting state (Home pressed while the home screen is showing): first app focused, drawer and sheet closed. */
     void reset(boolean animated) {
+        fadeChrome(1);
+        scheduleIdle();
         zone = Z_SHELF;
         shelfIndex = 0;
         sheetOpen = false;
@@ -556,6 +571,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroFading = tickHeroFade(up);
         boolean bgFading = tickBackgroundFade(up);
         boolean nightMoving = tickNight(up);
+        boolean wallFading = cinematic() && cinematic.fading(up);
+        if (wallFading) sky.invalidate();
+        boolean chromeMoving = tickChrome(up);
 
         if (drawerMoving || sheetMoving || motionDirty) updateMotion();
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
@@ -574,7 +592,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (updateClock()) {
             layoutStatus();
             status.invalidate();
-            if (cinematic()) heroLayer.invalidate();
+            if (cinematic()) sky.invalidate();     // the clock is part of the wallpaper
             if (hero != null && hero.clock) {
                 refreshHero(false);
                 heroLayer.invalidate();
@@ -583,7 +601,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
         // Busy: something is moving, or the sheet or the drawer is open.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
-                || sheetMoving || toastFading || heroFading || bgFading || nightMoving;
+                || sheetMoving || toastFading || heroFading || bgFading || nightMoving || wallFading || chromeMoving;
         Choreographer.getInstance().postFrameCallbackDelayed(this, busy ? (Performance.lightweight ? 16 : 0) : 1000);
     }
 
@@ -599,10 +617,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float home = 1 - s, top = home * (1 - smoothstep(0, 0.32f, dc));
         float shift = SHIFT * k;
         float lift = -d * shift;
-        show(heroLayer, top, lift);
-        show(status, top, lift);
-        show(platter, home, lift);
-        show(tiles, home, lift);
+        show(heroLayer, top * chrome, lift);
+        show(status, top * chrome, lift);
+        show(platter, home * chrome, lift);
+        show(tiles, home * chrome, lift);
         float da = home * smoothstep(0.1f, 0.6f, dc);
         drawerLayer.setTranslationY((1 - d) * shift);
         drawerLayer.setAlpha(da);
@@ -773,6 +791,50 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             nightAt = 0;
             nightChanged();
         }
+    }
+
+    private final Runnable idle = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            if (cinematic() && zone == Z_SHELF && !sheetOpen && !drawerOpen) fadeChrome(0);
+            else scheduleIdle();
+        }
+    };
+
+    private final Runnable wallpaperReady = new Runnable() {
+        @Override public void run() {
+            sky.invalidate();
+            if (running) Choreographer.getInstance().postFrameCallback(HomeView.this);
+        }
+    };
+
+    private void scheduleIdle() {
+        handler.removeCallbacks(idle);
+        if (running) handler.postDelayed(idle, IDLE_MS);
+    }
+
+    private void fadeChrome(float to) {
+        if (chromeTo == to) return;
+        chromeFrom = chrome;
+        chromeTo = to;
+        chromeAt = SystemClock.uptimeMillis();
+        if (running) {
+            Choreographer.getInstance().removeFrameCallback(this);
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    }
+
+    /** Advances the idle fade; true while it runs. */
+    private boolean tickChrome(long up) {
+        if (chromeAt == 0) return false;
+        float t = Ui.clamp((up - chromeAt) / (float) CHROME_MS);
+        chrome = chromeFrom + (chromeTo - chromeFrom) * t * t * (3 - 2 * t);
+        if (t >= 1) {
+            chrome = chromeTo;
+            chromeAt = 0;
+        }
+        motionDirty = true;
+        return true;
     }
 
     /** Advances the day ⇄ night transition; true while it runs. */
@@ -1005,7 +1067,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float full = (CONTENT_R - MARGIN) * k;
         float tw = Math.min(TILE_MAX_W * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
         float width = n * tw + Math.max(0, n - 1) * gap;
-        float left = cinematic() ? MARGIN * k : (w - width) / 2f;
+        float left = (w - width) / 2f;
         float top = L_PLATTER_TOP * k;
         platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
         float x = left, y = top + pad;
@@ -1018,12 +1080,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Shelf layer: the glass bar and its shadow (it only changes with the background). */
     private void drawPlatter(Canvas c) {
-        if (cinematic()) {
-            fill.setShader(null);
-            fill.setColor(0xFF30363B);
-            c.drawRect(MARGIN * k, 816 * k, CONTENT_R * k, 817 * k, fill);
-            return;
-        }
+        if (cinematic()) return;      // the tiles float over the photo
         if (shelf.isEmpty()) return;
         float radius = (TILE_RADIUS + SHELF_PAD) * k;
         tmp.set(platterRect);
@@ -1116,7 +1173,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int[] style = TILE_STYLE.get(it.key);
         if (cinematic()) {
             tileFill.setShader(null);
-            tileFill.setColor(blend(0xFF1D2928, 0xFF34443E, fc));
+            tileFill.setColor(blend(0x8C0B0F12, 0xD91C2226, fc));
             c.drawRoundRect(cell, r, r, tileFill);
             if (it.logo != null) drawLogo(c, it, cell, s, style == null ? 0 : style[2]);
             else if (it.symbol != null) Symbols.draw(getContext(), c, it.symbol,
@@ -1676,7 +1733,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             Choreographer.getInstance().postFrameCallback(this);
         }
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
-        switch (e.getKeyCode()) {
+        int code = e.getKeyCode();
+        boolean nav = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+                || code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                || code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_BACK;
+        if (nav) scheduleIdle();
+        if (!down && code == swallowUp) {
+            swallowUp = -1;
+            return true;
+        }
+        if (nav && down && chromeTo < 1) {
+            fadeChrome(1);
+            swallowUp = code;
+            okDown = backDown = false;
+            return true;
+        }
+        switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down) move(-1, 0);
                 return true;
@@ -1943,7 +2016,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * same photo almost black (or a dark gradient), drawn on top during the transition.
      */
     private void drawLightSky(Canvas c) {
-        if (cinematic()) { cinematic.background(c); return; }
+        if (cinematic()) { cinematic.background(c, getContext(), clockText); return; }
         long up = SystemClock.uptimeMillis();
         float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
         boolean fading = bgFadeAt != 0;
@@ -2086,12 +2159,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 RectF r = topRects[3 + i];
                 boolean selected = zone == Z_TOP && topIndex == 3 + i;
                 fill.setShader(null);
-                fill.setColor(selected ? CinematicHome.ACCENT : 0xFF263631);
+                fill.setColor(selected ? CinematicHome.ACCENT : 0x66000000);
                 c.drawRoundRect(r, 12 * k, 12 * k, fill);
                 Symbols.draw(getContext(), c, lightButtons.get(i).symbol, r.centerX(), r.centerY(),
-                        28 * k, selected ? 0xFF15201D : 0xFFE0E5DF);
+                        28 * k, selected ? 0xFF15201D : 0xFFF2F0EA);
                 if (selected) {
-                    lTip.setColor(0xFFE0E5DF);
+                    lTip.setColor(0xFFF2F0EA);
                     float x = Math.min(r.centerX(), CONTENT_R * k - lTip.measureText(lightButtons.get(i).label) / 2);
                     c.drawText(lightButtons.get(i).label, x, r.bottom + 44 * k, lTip);
                 }

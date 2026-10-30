@@ -1,0 +1,13 @@
+# id|clock center x|clock baseline (layout units, 1920x1080)|ink|front left|front top (pixels of the 1280x720 photo)|caption|credit
+aoraki|960|359|FFF7F5F0|320|177|Aoraki / Mount Cook, New Zealand|Bernard Spragg
+noville|960|353|FF1C2226|320|173|Noville, Switzerland|Romain Dupraz
+alpenglow|960|600|FFF7F5F0|320|400|Above the clouds|Christopher Burns
+orange-sky|960|546|FF1C2226|320|302|Orange sky over the Alps|Pietro De Grandi
+swiss-alps|960|384|FF1C2226|320|191|Swiss Alps|Mike Dennler
+silhouette|960|600|FF1C2226|320|359|Mountain silhouette at dusk|Pacific Austin
+dolomites|960|594|FFF7F5F0|320|334|Dolomites, Italy|Paul Morris
+blue-ridges|960|600|FFF7F5F0|320|400|Blue mountain silhouettes|bady qb
+london|960|340|FFF7F5F0|320|139|London|Pierre Blaché
+vienna|960|340|FFF7F5F0|320|150|Vienna, Austria|Pierre Blaché
+dallas|960|371|FFF7F5F0|320|185|Downtown Dallas at dusk|Carol M. Highsmith
+toronto|960|340|FF1C2226|320|50|Toronto skyline at dusk|Mitul Shah
