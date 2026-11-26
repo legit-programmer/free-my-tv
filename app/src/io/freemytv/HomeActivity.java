@@ -1,7 +1,10 @@
 package io.freemytv;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.util.TypedValue;
@@ -17,6 +20,15 @@ import android.widget.TextView;
 public class HomeActivity extends Activity {
     private HomeView home;
     private int performanceRevision;
+    private boolean watching;
+
+    /** An app was installed, updated or switched on: if it's one we turned off, turn it off again now, not at boot. */
+    private final BroadcastReceiver packages = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent intent) {
+            String pkg = intent.getData() == null ? null : intent.getData().getSchemeSpecificPart();
+            if (pkg != null) checkCameBack(pkg);
+        }
+    };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -35,6 +47,13 @@ public class HomeActivity extends Activity {
             return;
         }
         Ui.init(this);
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        filter.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        filter.addDataScheme("package");
+        registerReceiver(packages, filter);
+        watching = true;
         performanceRevision = Performance.revision;
         home = new HomeView(this);
         setContentView(home);
@@ -50,6 +69,14 @@ public class HomeActivity extends Activity {
             performanceRevision = Performance.revision;
         }
         if (home != null) home.resume();
+        checkCameBack(null);
+    }
+
+    private void checkCameBack(String only) {
+        Context app = getApplicationContext();
+        new Thread(() -> {
+            if (HomeMode.cameBack(app, only)) HomeMode.verify(app);
+        }, "came-back").start();
     }
 
     @Override protected void onPause() {
@@ -64,6 +91,7 @@ public class HomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (watching) unregisterReceiver(packages);
         if (home != null) home.destroy();
         super.onDestroy();
     }

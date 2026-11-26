@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.SystemClock;
 
@@ -43,6 +44,11 @@ final class HomeMode {
     static final String GOOGLE_HOME = "com.google.android.apps.tv.launcherx/.home.HomeActivity";
     /** Google TV has a RecoveryActivity that would take over the home screen without its launcher. */
     static final String GOOGLE_SETUP = "com.google.android.tungsten.setupwraith";
+    /**
+     * Home screens that open themselves at boot through their maker's own "home" action, not Android's, so they never
+     * show up as the TV's home screen. Turned off with it in Free My TV mode.
+     */
+    static final String[] BRAND_HOMES = {"com.mitv.tvhome.atv"};       // Xiaomi PatchWall
 
     /**
      * Turned off in Free My TV mode, when the TV has them. Google extras first, then TV-maker extras (TCL here; add
@@ -56,6 +62,13 @@ final class HomeMode {
         "com.tcl.messagebox", "com.tcl.usercenter",                                   // TCL messages and account
         "com.tcl.exhibit", "com.tcl.esticker", "com.tcl.hotelmenu",                   // store demo, hotel menu
         "com.tcl.repairguide", "com.tcl.ocean.instructions", "com.tcl.logkit",        // repair guide, manual, logs
+        "com.google.android.videos",                                                  // Play Movies (discontinued)
+        // Xiaomi (Mi TV 4A, Android 9)
+        "com.mitv.tvhome.mitvplus",                                                   // Mi TV+ ad-supported channels
+        "com.mitv.dream",                                                             // Xiaomi screensaver
+        "com.xm.webcontent",                                                          // PatchWall's web pages
+        "com.xiaomi.mitv.handbook",                                                   // on-screen manual
+        "android.autoinstalls.config.xioami.dangal",                                  // installs sponsored apps
     };
 
     /** Optional voice assistant packages; selecting these stops voice search. */
@@ -70,7 +83,21 @@ final class HomeMode {
         "com.tcl.useragreement", "com.tcl.factory.view", "com.tcl.guard", "com.tcl.t_solo",
         "com.google.android.gms", "com.google.android.gsf", "com.android.vending", "com.google.android.apps.mediashell",
         "com.google.android.tv.remote.service", "com.google.android.inputmethod.latin", "com.google.android.webview",
-        "com.android.tv.settings", "com.android.systemui", "android", PKG));
+        "com.android.tv.settings", "com.android.systemui", "android", PKG,
+        // Xiaomi and its Amlogic chip: TV service, picture and sound, inputs, live TV, parental lock, updates, setup
+        "mitv.service", "com.xiaomi.mitv.res", "com.xiaomi.mitv.tvmanager", "com.xiaomi.mitv.updateservice",
+        "com.xiaomi.android.tvsetup.partnercustomizer", "com.xiaomi.android.TV.audio", "com.mitv.tvlock",
+        "com.mitv.milinkservice", "com.droidlogic", "com.droidlogic.overlay", "com.droidlogic.tvinput",
+        "com.droidlogic.tv.settings", "com.droidlogic.tv.soundeffectsettings", "com.droidlogic.droidlivetv",
+        "com.android.tv", "com.android.providers.tv"));
+
+    /**
+     * A copy of what we changed, kept on the TV outside this app's data (the shell's folder), so a reinstall still
+     * knows which apps to turn back off and what "original" restores.
+     */
+    private static final String RECORD = "/data/local/tmp/io.freemytv-state.json";
+    private static final String[] RECORD_KEYS = {
+        "mode", "originalHome", "originalDream", "originalDreamSetting", "disabled", "optionalDisabled"};
 
     /** One switch at a time (jobs can overlap: a boot check and a button press). */
     private static final Object RUN = new Object();
@@ -98,9 +125,31 @@ final class HomeMode {
         ModeJob.schedule(c, ModeJob.VERIFY, null, 0);
     }
 
+    /**
+     * Whether an app we turned off is on again: the maker's updater reinstalls them (Xiaomi's turns PatchWall back
+     * on), and the next boot would open it. Asked by the home screen; cheap, no ADB. `only`: one package, or null.
+     */
+    static boolean cameBack(Context c, String only) {
+        JSONObject s = state(c);
+        if (!FREE.equals(s.optString("mode"))) return false;
+        PackageManager pm = c.getPackageManager();
+        for (String pkg : stringList(s, "disabled")) {
+            if (only != null && !only.equals(pkg)) continue;
+            try {
+                int setting = pm.getApplicationEnabledSetting(pkg);
+                if (setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                        && setting != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) return true;
+            } catch (IllegalArgumentException gone) {
+                // Uninstalled (or not visible to us): nothing to turn off.
+            }
+        }
+        return false;
+    }
+
     /** Read-only inventory. No package is disabled by opening the screen. */
     static JSONObject debloatInventory(Context c) throws IOException, JSONException {
         try (Adb adb = Adb.connect(c, 120_000, null)) {
+            recall(c, adb);
             Set<String> present = packages(adb, "");
             Set<String> disabled = packages(adb, "-d");
             Set<String> owned = new HashSet<>(stringList(state(c), "optionalDisabled"));
@@ -125,6 +174,7 @@ final class HomeMode {
     static void applyDebloat(Context c, String selection) {
         synchronized (RUN) {
             try (Adb adb = connect(c, state(c))) {
+                recall(c, adb);
                 Set<String> selected = new HashSet<>();
                 JSONArray input = new JSONArray(selection);
                 Set<String> allowed = optionalCandidates();
@@ -164,6 +214,7 @@ final class HomeMode {
                     s.put("optionalDisabled", new JSONArray(sorted(owned))).put("disabled", new JSONArray(sorted(all)));
                     save(c, s);
                 }
+                keepRecord(c, adb);
                 done(c, failures.isEmpty() ? null : Ui.tr("Falha ao alterar: ", "Could not change: ") + String.join(", ", failures));
                 notice(c, Ui.tr("Apps opcionais desativados: ", "Optional apps disabled: ") + owned.size());
             } catch (Exception e) {
@@ -187,6 +238,8 @@ final class HomeMode {
     private static void applyFree(Context c) {
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
+            recall(c, adb);
+            s = state(c);
             // The TV's own home screen and screensaver, recorded once (before ours replace them) so "original" restores
             // exactly what was there, on any brand.
             String home = originalHome(s);
@@ -236,6 +289,7 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray(sorted(disabled)));
             save(c, s);
+            keepRecord(c, adb);
             notice(c, Ui.tr("Free My TV ligado: Início e tela de descanso novos, " + disabled.size() + " apps desligados.",
                     "Free My TV is on: new home screen and screensaver, " + disabled.size() + " apps turned off."));
             busy(c, Ui.tr("Medindo o Free My TV…", "Measuring Free My TV…"));
@@ -251,6 +305,8 @@ final class HomeMode {
     private static void applyOriginal(Context c) {
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
+            recall(c, adb);
+            s = state(c);
             busy(c, Ui.tr("Religando os apps…", "Turning the apps back on…"));
             String home = originalHome(s);
             Set<String> toEnable = new HashSet<>(stringList(s, "disabled"));
@@ -277,6 +333,7 @@ final class HomeMode {
             optional.retainAll(failed);
             s.put("optionalDisabled", new JSONArray(sorted(optional)));
             save(c, s);
+            keepRecord(c, adb);
             if (failed.isEmpty() && homeOk) {
                 notice(c, Ui.tr("Modo original: Início, tela de descanso e apps de fábrica de volta.",
                         "Original mode: the factory home screen, screensaver and apps are back."));
@@ -321,6 +378,7 @@ final class HomeMode {
                 }
                 s.put("homeReverted", true).put("disabled", kept);
                 save(app, s);
+                keepRecord(app, adb);
                 notice(app, Ui.tr("O Início do Free My TV caiu 3 vezes seguidas; voltei para o Início original.",
                         "Free My TV's home screen crashed 3 times in a row; I switched back to the original one."));
                 adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
@@ -344,6 +402,15 @@ final class HomeMode {
                 s.put("fingerprint", fingerprint);
                 save(app, s);
             } catch (JSONException ignored) {}
+            // After a reinstall: take back the kept record. Only once ADB was allowed, so a boot never asks for it.
+            if (!FREE.equals(s.optString("mode")) && fresh(s) && s.optBoolean("adbAuthorized")) {
+                try (Adb adb = Adb.connect(app, 10_000, null)) {
+                    recall(app, adb);
+                } catch (Exception e) {
+                    AppLog.w("could not read the kept record: " + e.getMessage());
+                }
+                s = state(app);
+            }
             if (!FREE.equals(s.optString("mode"))) return;
             List<String> fixed = new ArrayList<>();
             try (Adb adb = Adb.connect(app, 10_000, null)) {
@@ -375,6 +442,7 @@ final class HomeMode {
                 JSONObject latest = state(app);
                 latest.put("disabled", new JSONArray(sorted(disabled)));
                 save(app, latest);
+                keepRecord(app, adb);
             } catch (Exception e) {
                 notice(app, Ui.tr("Não consegui conferir o Free My TV: ", "Couldn't check Free My TV: ") + e.getMessage());
                 return;
@@ -394,6 +462,7 @@ final class HomeMode {
         String homePkg = packageOf(home);
         if (homePkg != null && !homePkg.equals(PKG)) out.add(homePkg);
         out.add(GOOGLE_SETUP);
+        for (String brand : BRAND_HOMES) if (!brand.equals(homePkg)) out.add(brand);
         String dreamPkg = packageOf(dream);
         if (dreamPkg != null && !dreamPkg.equals(PKG) && !dreamPkg.equals(homePkg)) out.add(dreamPkg);
         // Optional packages are changed only by the explicit debloating screen.
@@ -434,6 +503,38 @@ final class HomeMode {
         if (component == null || component.isEmpty()) return null;
         int slash = component.indexOf('/');
         return slash > 0 ? component.substring(0, slash) : component;
+    }
+
+    /** No record of our own yet (a fresh install): nothing switched, nothing turned off. */
+    private static boolean fresh(JSONObject s) {
+        return !s.has("originalHome") && !s.has("disabled");
+    }
+
+    /** Writes the copy of our record kept on the TV. */
+    private static void keepRecord(Context c, Adb adb) {
+        try {
+            JSONObject s = state(c), r = new JSONObject();
+            for (String key : RECORD_KEYS) if (s.has(key)) r.put(key, s.get(key));
+            adb.shell("printf '%s' '" + r.toString().replace("'", "'\"'\"'") + "' > " + RECORD);
+        } catch (IOException | JSONException e) {
+            AppLog.w("could not keep the record on the TV: " + e.getMessage());
+        }
+    }
+
+    /** After a reinstall (no record of our own): takes back the copy kept on the TV, if there is one. */
+    private static void recall(Context c, Adb adb) {
+        JSONObject s = state(c);
+        if (!fresh(s)) return;
+        try {
+            String text = adb.shell("cat " + RECORD + " 2>/dev/null").trim();
+            if (!text.startsWith("{")) return;
+            JSONObject r = new JSONObject(text);
+            for (String key : RECORD_KEYS) if (r.has(key)) s.put(key, r.get(key));
+            save(c, s);
+            AppLog.w("took back the record kept on the TV: " + r.optString("mode") + ", off: " + r.optJSONArray("disabled"));
+        } catch (IOException | JSONException e) {
+            AppLog.w("could not read the kept record: " + e.getMessage());
+        }
     }
 
     /** Packages the shell sees (all; "-d" = only the disabled ones). The app alone can't see the ones it doesn't declare. */
